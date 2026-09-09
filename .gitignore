@@ -216,3 +216,16 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- C++ / CMake -------------------------------------------------------------
+build*/
+cmake-build-*/
+out/
+.vs/
+.vscode/
+*.user
+CMakeUserPresets.json
+
+# Local audio work in progress (keep the curated assets, not the scratch)
+work/
+*.wav.bak
