@@ -26,6 +26,7 @@
 #include "soundsys/AudioBuffer.hpp"
 #include "soundsys/ISoundVoice.hpp"
 #include "soundsys/PlaybackHead.hpp"
+#include "soundsys/TimeStretchReader.hpp"
 
 namespace soundsys {
 
@@ -41,6 +42,7 @@ struct TurbineStartConfig {
     // right when the simulated start closely matches the recorded one. See
     // soundsys/PlaybackHead.hpp.
     PlaybackMode mode = PlaybackMode::PitchLocked;
+    TimeStretchConfig stretch;  // grain settings of the pitch-locked head
 
     // Position feedback gain, 1/seconds. Low on purpose: the feed-forward term
     // does the work, this only removes slow drift.
@@ -60,6 +62,12 @@ struct TurbineStartConfig {
     // this margin of the end of the recording.
     double handoffMarginSeconds = 0.15;
     double fadeOutSeconds = 0.35;
+
+    // Once NG reaches the last anchor the start is over: the voice announces
+    // StartSequenceComplete, whoever plays the steady engine (the loop bank)
+    // fades in, and this voice fades out over this long - still playing its own
+    // recorded idle at 1x, so the two overlap on the same sound.
+    double handoffCrossfadeSeconds = 2.0;
 
     // If NG falls this far below the highest NG seen during the sequence, the
     // start is treated as aborted even without an explicit event.
@@ -93,6 +101,7 @@ private:
     enum class State { Idle, Running, FadingOut };
 
     void beginStart(double ng);
+    void announceHandoff(float ng);
 
     TurbineStartConfig cfg_;
     AudioBuffer        buffer_;
@@ -112,6 +121,9 @@ private:
     float  gain_ = 1.0f;
     bool   haveLastTarget_ = false;
     bool   handoffEmitted_ = false;
+    bool   freeRunning_ = false;  // past the last anchor: recorded idle plays at 1x
+    float  fadeOutStep_ = 1.0f;   // abort / shutdown
+    float  handoffStep_ = 1.0f;   // crossfade into the steady-state voices
 };
 
 } // namespace soundsys

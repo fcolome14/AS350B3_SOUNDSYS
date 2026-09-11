@@ -1,7 +1,20 @@
 [project]
 name = "as350b3-soundsys"
 version = "0.1.0"
-description = "Add your description here"
+description = "Sound system module for the AS350 B3 simulator: C++ audio engine plus offline recording analysis"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = []
+
+# The Python side of this repo is the offline tooling. Everything it needs comes
+# in through the workspace member below, so `uv sync` at the root is the single
+# command that sets the whole thing up.
+dependencies = ["ngmap"]
+
+[project.optional-dependencies]
+plots = ["ngmap[plots]"]
+
+[tool.uv.workspace]
+members = ["tools/ngmap"]
+
+[tool.uv.sources]
+ngmap = { workspace = true }

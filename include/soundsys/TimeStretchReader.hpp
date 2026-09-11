@@ -31,6 +31,13 @@ struct TimeStretchConfig {
     double searchMs = 5.0;      // WSOLA search radius
     double correlationMs = 10.0;  // how much of the previous grain to match
     int    correlationStride = 2;  // decimation of the correlation, for speed
+
+    // Below real-time speed the same stretch of tape is re-read grain after
+    // grain. A pure tone survives that, but real recordings carry broadband
+    // noise, and a noise segment repeated every hop is heard as a buzz at the
+    // hop rate. Each grain's read point is scattered by up to this much, scaled
+    // by how far below real time the head is moving (no scatter at speed >= 1).
+    double jitterMs = 30.0;
 };
 
 class TimeStretchReader final : public IPlaybackHead {
@@ -55,6 +62,7 @@ private:
     void  buildNextGrain();
     double findBestOffset(double nominalStart) const;
     float sampleAt(std::uint32_t channel, double sourceFrame) const;
+    double scatter();  // uniform in [-1, 1], allocation-free
 
     TimeStretchConfig cfg_;
 
@@ -78,6 +86,9 @@ private:
     std::vector<float> reference_;  // correlationFrames_, what the next grain should continue
     std::uint32_t      emitted_ = 0;  // frames already taken out of ready_
     bool               primed_ = false;
+
+    double        jitterFrames_ = 0.0;  // in source frames
+    std::uint32_t rng_ = 0x9E3779B9u;
 };
 
 }  // namespace soundsys

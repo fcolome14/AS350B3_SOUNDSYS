@@ -59,6 +59,10 @@ public:
                                std::uint32_t frames) = 0;
 };
 
+struct TimeStretchConfig;  // soundsys/TimeStretchReader.hpp
+
 std::unique_ptr<IPlaybackHead> makePlaybackHead(PlaybackMode mode);
+// Same, with the grain settings of the pitch-locked head (ignored by Varispeed).
+std::unique_ptr<IPlaybackHead> makePlaybackHead(PlaybackMode mode, const TimeStretchConfig& stretch);
 
 }  // namespace soundsys

@@ -222,7 +222,10 @@ build*/
 cmake-build-*/
 out/
 .vs/
-.vscode/
+# VS Code: keep the shared launch/build configs, ignore personal settings
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
 *.user
 CMakeUserPresets.json
 

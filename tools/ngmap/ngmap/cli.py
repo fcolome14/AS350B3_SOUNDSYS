@@ -1,10 +1,10 @@
 """Command line for the offline half of the sound system.
 
-    python -m ngmap analyze  start.wav
-    python -m ngmap phases   flight.wav --extract out/
-    python -m ngmap anchors  start.wav --trace start_telemetry.csv --out anchors.json
-    python -m ngmap validate anchors.json start.wav --calibrate 67@41.5
-    python -m ngmap loop     idle.wav --region 12:40 --out idle_loop.wav
+    uv run ngmap analyze  start.wav
+    uv run ngmap phases   flight.wav --extract out/
+    uv run ngmap anchors  start.wav --trace start_telemetry.csv --out anchors.json
+    uv run ngmap validate anchors.json start.wav --calibrate 67@41.5
+    uv run ngmap loop     idle.wav --region 12:40 --out idle_loop.wav
 
 Nothing here synthesises audio: every command takes recordings of the real
 aircraft and produces either a description of them or a trimmed copy.
@@ -30,7 +30,7 @@ from .telemetry import detect_events, load_trace
 # ---------------------------------------------------------------------------
 
 def _track(path: str, args) -> tuple:
-    rec = audio_mod.load_wav(path)
+    rec = audio_mod.load_audio(path)
     spec = audio_mod.spectrogram(rec, n_fft=args.fft, hop=args.hop)
     track = audio_mod.track_fundamental(spec, fmin=args.fmin, fmax=args.fmax,
                                         n_harmonics=args.harmonics)
@@ -194,7 +194,7 @@ def cmd_validate(args) -> int:
 
 
 def cmd_loop(args) -> int:
-    rec = audio_mod.load_wav(args.audio)
+    rec = audio_mod.load_audio(args.audio)
     start, end = _parse_region(args.region, rec.duration)
     points = find_loop(rec, region_start=start, region_end=end,
                        target_seconds=args.seconds, search_seconds=args.search,

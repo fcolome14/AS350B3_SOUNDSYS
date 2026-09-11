@@ -34,6 +34,13 @@ public:
 
     static bool available() noexcept;
 
+    // Optional tap on everything the device plays, called on the audio thread
+    // right after the engine rendered it (recording a session, metering). Must
+    // not block or allocate. Set it before start().
+    using Tap = void (*)(const float* interleaved, std::uint32_t frames, std::uint32_t channels,
+                         void* user);
+    void setTap(Tap tap, void* user) noexcept;
+
     // Opaque backend state; public only so the device callback can reach it.
     struct Impl;
 

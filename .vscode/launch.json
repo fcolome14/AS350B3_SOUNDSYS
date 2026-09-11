@@ -1,0 +1,46 @@
+{
+    // Lanzar ESTE PRIMERO y despues la VEMD (desde su propia ventana de VS Code).
+    // En el terminal debe salir "listening on udp ...:49350" y, al abrir la
+    // VEMD, "link UP - VEMD heard". Para parar: boton de stop o Ctrl+C en el
+    // terminal. Solo puede haber un soundsys_host escuchando en el puerto.
+    //
+    // Requiere la extension C/C++ (ms-vscode.cpptools) para "cppvsdbg".
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Sonido: soundsys_host (Release)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Release/soundsys_host.exe",
+            "args": [
+                "--wav", "${workspaceFolder}/work/2b1_bridge/2b1_start_bridged_eq.wav",
+                "--anchors", "${workspaceFolder}/work/2b1_bridge/2b1_start_bridged_eq.vemd.anchors.json",
+                // Bucles de regimen estable, por el NG al que se grabaron: siguen
+                // sonando mientras el NG no cambie y cubren IDLE <-> FLIGHT.
+                "--loop", "68:${workspaceFolder}/work/loops/2b1_idle_loop.wav",
+                "--loop", "80.7:${workspaceFolder}/work/loops/2b1_flight_loop.wav"
+                // Mas opciones: "--gain", "0.5", "--record", "sesion.wav", "--bind", "127.0.0.1"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "preLaunchTask": "compilar soundsys_host (Release)"
+        },
+        {
+            // Para poner breakpoints. El audio en Debug va sin optimizar pero
+            // sobra CPU; si oyes cortes, usa la Release.
+            "name": "Sonido: soundsys_host (Debug)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Debug/soundsys_host.exe",
+            "args": [
+                "--wav", "${workspaceFolder}/work/2b1_bridge/2b1_start_bridged_eq.wav",
+                "--anchors", "${workspaceFolder}/work/2b1_bridge/2b1_start_bridged_eq.vemd.anchors.json",
+                "--loop", "68:${workspaceFolder}/work/loops/2b1_idle_loop.wav",
+                "--loop", "80.7:${workspaceFolder}/work/loops/2b1_flight_loop.wav"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "preLaunchTask": "compilar soundsys_host (Debug)"
+        }
+    ]
+}

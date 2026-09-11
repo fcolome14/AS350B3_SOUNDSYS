@@ -10,15 +10,20 @@ Nothing is synthesised anywhere in this pipeline.
 
 ## 0. Install the tool
 
+The Python tooling is a uv workspace member, so one command at the repository
+root sets it up:
+
 ```bash
-cd tools/ngmap
-pip install -e .          # numpy + scipy only
+uv sync                   # numpy + scipy; add --extra plots for matplotlib
 ```
+
+Every command below runs through `uv run`, which keeps the environment locked to
+`uv.lock` without anything having to be activated.
 
 ## 1. Look at what you have
 
 ```bash
-python -m ngmap analyze recordings/cabin_start.wav --csv start_track.csv
+uv run ngmap analyze recordings/cabin_start.wav --csv start_track.csv
 ```
 
 Prints duration, the tracked fundamental range and the confidence. The track is
@@ -31,13 +36,13 @@ If you know one operating point - ground idle is the easy one - give it as
 `--calibrate NG@SECONDS` and every reading is reported in NG% instead of Hz:
 
 ```bash
-python -m ngmap analyze recordings/cabin_start.wav --calibrate 67@41.5
+uv run ngmap analyze recordings/cabin_start.wav --calibrate 67@41.5
 ```
 
 ## 2. Cut a long recording into phases
 
 ```bash
-python -m ngmap phases recordings/flight.wav --calibrate 67@120 --extract work/
+uv run ngmap phases recordings/flight.wav --calibrate 67@120 --extract work/
 ```
 
 Classifies every frame as `spool_up` / `steady` / `spool_down` / `quiet`, merges
@@ -49,7 +54,7 @@ each phase to its own file with short fades at the seams.
 With telemetry (the accurate route - use the 20 Hz 2B1 trace):
 
 ```bash
-python -m ngmap anchors recordings/cabin_start.wav \
+uv run ngmap anchors recordings/cabin_start.wav \
     --trace telemetry/start_2b1.csv \
     --out assets/anchors/arriel2b1_start.json
 ```
@@ -64,7 +69,7 @@ are `--ignition-ng` / `--generator-ng` if your variant differs.
 Without telemetry (library material):
 
 ```bash
-python -m ngmap anchors recordings/library_start.wav --calibrate 67@38 \
+uv run ngmap anchors recordings/library_start.wav --calibrate 67@38 \
     --out assets/anchors/library_start.json
 ```
 
@@ -78,7 +83,7 @@ a table that is not strictly increasing on both axes.
 ## 4. Check a table you already have
 
 ```bash
-python -m ngmap validate assets/anchors/arriel2b1_start.json \
+uv run ngmap validate assets/anchors/arriel2b1_start.json \
     recordings/cabin_start.wav --calibrate 67@41.5
 ```
 
@@ -88,7 +93,7 @@ anchor at that end of the segment is in the wrong place.
 ## 5. Make the loops
 
 ```bash
-python -m ngmap loop work/03_steady_67.wav --region 4:28 --seconds 5 \
+uv run ngmap loop work/03_steady_67.wav --region 4:28 --seconds 5 \
     --out assets/wav/idle_loop.wav
 ```
 

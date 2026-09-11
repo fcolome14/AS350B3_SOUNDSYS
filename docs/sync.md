@@ -89,6 +89,24 @@ Both are one line apart in `TurbineStartConfig`, and both are covered by the
 test, which asserts the pitch relationship for each rather than leaving the
 trade-off as a footnote.
 
+## Plateaus on real recordings
+
+Two things the synthetic test signal hid and the real 2B1 recording exposed:
+
+- **A stopped head re-reads the same grain.** With a pure tone that is
+  harmless; with real broadband noise, the same 40 ms of tape every 20 ms is
+  heard as a buzz at the hop rate. `TimeStretchConfig::jitterMs` scatters each
+  grain's read point by up to 30 ms, scaled by how far below real time the head
+  is moving (nothing at speed >= 1); WSOLA still aligns the tonal part. The
+  position itself never moves because of it. Guarded by the "noise at zero
+  speed" check in `tests/test_sync.cpp` (self-similarity at the hop lag must
+  stay under 0.3; it measures ~0.003).
+- **Idle is not a plateau to hold, it is recording to play.** Once NG reaches
+  the last anchor, the table has nothing more to say and the rest of the file is
+  the engine sitting at idle. `TurbineStartVoice` then free-runs at 1x through
+  that recorded idle - correct tone, nothing stretched - and hands over to the
+  idle loop near the end of the file as before.
+
 ## Why not a music-grade time stretcher
 
 Because we do not need one. A phase vocoder is built to stretch arbitrary

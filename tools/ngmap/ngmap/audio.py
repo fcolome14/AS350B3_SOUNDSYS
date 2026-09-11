@@ -6,8 +6,8 @@ the tonal content of a turbine is locked to shaft speed, so the frequency of the
 NG whine in the recording IS a reading of NG at that instant. Extract that track
 and you can place a recording against simulated NG without any telemetry at all.
 
-Only numpy and scipy are required. librosa is nice for exploration but nothing
-here needs it.
+numpy, scipy and soundfile (for decoding) are all it needs. librosa is nice for
+exploration but nothing here depends on it.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+import soundfile as sf
 from scipy.io import wavfile
 from scipy.signal import get_window
 
@@ -35,17 +36,13 @@ class Recording:
         return len(self.samples) / float(self.rate)
 
 
-def load_wav(path: str, mono: bool = True) -> Recording:
-    rate, data = wavfile.read(path)
+def load_audio(path: str, mono: bool = True) -> Recording:
+    """WAV, FLAC, OGG or MP3 - whatever libsndfile can decode.
 
-    # scipy hands back whatever the file holds; normalise to float [-1, 1].
-    if data.dtype.kind == "i":
-        data = data.astype(np.float64) / float(np.iinfo(data.dtype).max + 1)
-    elif data.dtype.kind == "u":
-        info = np.iinfo(data.dtype)
-        data = (data.astype(np.float64) - info.max / 2.0) / (info.max / 2.0)
-    else:
-        data = data.astype(np.float64)
+    Field and library recordings of the aircraft mostly arrive as MP3; decoding
+    them here keeps a lossy-to-lossless conversion step out of the pipeline.
+    """
+    data, rate = sf.read(path, dtype="float64", always_2d=False)
 
     channels = 1 if data.ndim == 1 else data.shape[1]
     if mono and data.ndim > 1:

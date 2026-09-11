@@ -8,6 +8,10 @@ namespace {
 
 constexpr double kPi = 3.14159265358979323846;
 
+// Grain alignment is matched on x[n] - 0.95 x[n-1]: a first-order high-pass
+// that hands the decision to the 1-8 kHz whine instead of the rumble below it.
+constexpr double kPreEmphasis = 0.95;
+
 // Position may advance at any rate, including zero (a hung start holds its
 // tone) - only the sign is fixed, since the grains are laid down forwards.
 constexpr double kMinSpeed = 0.0;
@@ -29,6 +33,7 @@ void TimeStretchReader::prepare(const AudioBuffer* source, double outputSampleRa
     grainFrames_ = hopFrames_ * 2;
     searchFrames_ = toFrames(cfg_.searchMs);
     correlationFrames_ = std::min(toFrames(cfg_.correlationMs), hopFrames_);
+    jitterFrames_ = std::max(0.0, cfg_.jitterMs) * 0.001 * outputRate_ * ratePerOutFrame_;
 
     // Hann, so that two half-overlapped grains sum to unity gain.
     window_.resize(grainFrames_);
@@ -49,6 +54,7 @@ void TimeStretchReader::prepare(const AudioBuffer* source, double outputSampleRa
 void TimeStretchReader::reset(double positionSeconds) {
     atEnd_ = false;
     primed_ = false;
+    rng_ = 0x9E3779B9u;  // same scatter sequence on every start: renders are repeatable
     emitted_ = hopFrames_;  // forces a grain to be built on the next read
     const double rate = (source_ && source_->sampleRate() > 0.0) ? source_->sampleRate() : 1.0;
     position_ = std::max(0.0, positionSeconds) * rate;
@@ -97,44 +103,74 @@ float TimeStretchReader::sampleAt(std::uint32_t channel, double sourceFrame) con
 // WSOLA: of all the places within +/- searchFrames_ of where the head says the
 // next grain starts, take the one whose opening looks most like the material
 // the previous grain was about to continue into.
+//
+// The match has to be sample-accurate. The whine the ear follows sits at
+// 1-8 kHz, a period of 6-40 samples; land a grain a few samples off and its
+// partials half-cancel against the previous grain's tail at every seam - an
+// amplitude dip every hop, heard as a 50 Hz buzz. (The first version searched
+// a 15-sample grid and measured +20 dB of 50 Hz modulation on the real start.)
 double TimeStretchReader::findBestOffset(double nominalStart) const {
     if (!primed_ || searchFrames_ == 0 || correlationFrames_ == 0) return nominalStart;
 
     const double step = ratePerOutFrame_;
     const int    stride = std::max(1, cfg_.correlationStride);
-    const double radius = static_cast<double>(searchFrames_) * step;
+    const int    radius = static_cast<int>(searchFrames_);
 
-    double bestOffset = 0.0;
-    double bestScore = -1e30;
-
-    // 33 candidate offsets across the window is plenty: the correlation surface
-    // of a tonal signal is smooth at this scale, and this keeps the search at a
-    // few tens of microseconds per grain.
-    constexpr int kCandidates = 33;
-    for (int c = 0; c < kCandidates; ++c) {
-        const double offset =
-            -radius + 2.0 * radius * static_cast<double>(c) / (kCandidates - 1);
-        double dot = 0.0;
-        double energy = 0.0;
+    // Normalised correlation against the pre-emphasised reference, so neither
+    // a loud stretch of tape nor the rumble can win on energy alone.
+    const auto score = [&](int k) {
+        const double base = nominalStart + k * step;
+        double       dot = 0.0;
+        double       energy = 0.0;
         for (std::uint32_t i = 0; i < correlationFrames_; i += stride) {
-            const double s = sampleAt(0, nominalStart + offset + i * step);
+            const double pos = base + i * step;
+            const double s = sampleAt(0, pos) - kPreEmphasis * sampleAt(0, pos - step);
             dot += s * reference_[i];
             energy += s * s;
         }
-        // Normalised correlation, so a loud stretch of tape cannot win on level
-        // alone.
-        const double score = dot / std::sqrt(energy + 1e-9);
-        if (score > bestScore) {
-            bestScore = score;
-            bestOffset = offset;
+        return dot / std::sqrt(energy + 1e-12);
+    };
+
+    // Coarse pass every few samples, then every sample around the winner.
+    constexpr int kCoarse = 4;
+    int           best = 0;
+    double        bestScore = -1e30;
+    for (int k = -radius; k <= radius; k += kCoarse) {
+        const double s = score(k);
+        if (s > bestScore) {
+            bestScore = s;
+            best = k;
         }
     }
-    return nominalStart + bestOffset;
+    const int centre = best;
+    for (int k = centre - kCoarse + 1; k < centre + kCoarse; ++k) {
+        if (k == centre || k < -radius || k > radius) continue;
+        const double s = score(k);
+        if (s > bestScore) {
+            bestScore = s;
+            best = k;
+        }
+    }
+    return nominalStart + best * step;
+}
+
+double TimeStretchReader::scatter() {
+    // xorshift32: a few instructions, no state beyond one word, fine for
+    // decorrelating grain positions.
+    rng_ ^= rng_ << 13;
+    rng_ ^= rng_ >> 17;
+    rng_ ^= rng_ << 5;
+    return static_cast<double>(rng_) / 2147483647.5 - 1.0;
 }
 
 void TimeStretchReader::buildNextGrain() {
     const double step = ratePerOutFrame_;
-    const double start = findBestOffset(position_);
+
+    // The slower the head, the more often the same material comes round again,
+    // so the more the read point is scattered around it. The position itself is
+    // untouched - only where this one grain is read from moves.
+    const double slow = 1.0 - std::min(1.0, speed_);
+    const double start = findBestOffset(position_ + jitterFrames_ * slow * scatter());
 
     // First half overlap-adds onto the previous grain's tail; second half is
     // kept for the next one.
@@ -152,9 +188,11 @@ void TimeStretchReader::buildNextGrain() {
     }
 
     // What the next grain should continue: the source right after this grain's
-    // hop, read at the same rate.
+    // hop, read at the same rate, pre-emphasised like the candidates.
     for (std::uint32_t i = 0; i < correlationFrames_; ++i) {
-        reference_[i] = sampleAt(0, start + (hopFrames_ + i) * step);
+        const double pos = start + (hopFrames_ + i) * step;
+        reference_[i] =
+            static_cast<float>(sampleAt(0, pos) - kPreEmphasis * sampleAt(0, pos - step));
     }
 
     // The head advances by one hop of real time, scaled by the demanded speed.

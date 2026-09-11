@@ -1,0 +1,52 @@
+{
+    // Tareas de compilacion del sonido. Las usan las configuraciones de
+    // launch.json como preLaunchTask: lanzar siempre recompila antes lo que se
+    // va a ejecutar, asi nunca se arranca un .exe viejo.
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "configurar (cmake)",
+            "detail": "Solo la primera vez o si cambia un CMakeLists.txt",
+            "type": "process",
+            "command": "cmake",
+            "args": ["-S", "${workspaceFolder}", "-B", "${workspaceFolder}/build"],
+            "problemMatcher": []
+        },
+        {
+            "label": "compilar soundsys_host (Release)",
+            "type": "process",
+            "command": "cmake",
+            "args": ["--build", "${workspaceFolder}/build", "--config", "Release",
+                     "--target", "soundsys_host"],
+            "group": "build",
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "compilar soundsys_host (Debug)",
+            "type": "process",
+            "command": "cmake",
+            "args": ["--build", "${workspaceFolder}/build", "--config", "Debug",
+                     "--target", "soundsys_host"],
+            "group": "build",
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "tests (Release)",
+            "type": "process",
+            "command": "ctest",
+            "args": ["--test-dir", "${workspaceFolder}/build", "-C", "Release",
+                     "--output-on-failure"],
+            "dependsOn": "compilar todo (Release)",
+            "group": "test",
+            "problemMatcher": []
+        },
+        {
+            "label": "compilar todo (Release)",
+            "type": "process",
+            "command": "cmake",
+            "args": ["--build", "${workspaceFolder}/build", "--config", "Release"],
+            "group": "build",
+            "problemMatcher": "$msCompile"
+        }
+    ]
+}

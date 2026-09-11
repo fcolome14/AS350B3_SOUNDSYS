@@ -65,6 +65,14 @@ engine.pushEvent(soundsys::EventType::EngineStartCommand);
 engine.setParameter(soundsys::ParamId::NgPercent, ng);
 ```
 
+## Running against the VEMD
+
+In the simulator this module is its own process, `soundsys_host`, fed by the
+VEMD (AS350B3_VEMD, which owns the engine model) over UDP through the small
+[`simlink`](simlink/README.md) contract. Neither project builds against the
+other's code. How it stays in sync, how to run it and what was measured end to
+end: [docs/integration.md](docs/integration.md).
+
 ## Build
 
 ```bash
@@ -89,13 +97,16 @@ build/bin/Release/soundsys_play   --wav rec.wav --anchors anchors.json --speed 0
 
 `tools/ngmap` analyses real recordings: pitch/NG tracking, phase segmentation,
 anchor-table construction and validation, loop-point extraction. numpy and scipy
-only.
+only, managed with [uv](https://docs.astral.sh/uv/) — the repository root is a uv
+workspace whose single member is that tool, so one sync sets everything up:
 
 ```bash
-cd tools/ngmap && pip install -e .
-python -m ngmap anchors recordings/cabin_start.wav --trace telemetry/start.csv \
-    --out ../../assets/anchors/arriel2b1_start.json
+uv sync
+uv run ngmap anchors recordings/cabin_start.wav --trace telemetry/start.csv --out assets/anchors/arriel2b1_start.json
 ```
+
+`uv sync --extra plots` adds matplotlib, which is only ever used for looking at
+tracks by eye. The C++ dependencies stay with CMake — uv does not manage those.
 
 Full workflow in [docs/assets.md](docs/assets.md).
 

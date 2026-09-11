@@ -15,7 +15,12 @@ endif()
 
 include(cmake/Dependencies.cmake)
 
+# The wire contract with the VEMD. Its own tiny project so other modules can
+# pull in just that directory.
+add_subdirectory(simlink)
+
 add_library(soundsys STATIC
+    src/link/SimLinkAdapter.cpp
     src/AudioEngine.cpp
     src/AudioBuffer.cpp
     src/AnchorTable.cpp
@@ -24,6 +29,7 @@ add_library(soundsys STATIC
     src/TimeStretchReader.cpp
     src/voices/TurbineStartVoice.cpp
     src/voices/LoopVoice.cpp
+    src/voices/NgLoopBankVoice.cpp
     src/backend/MiniaudioDevice.cpp
 )
 add_library(soundsys::soundsys ALIAS soundsys)
@@ -32,6 +38,7 @@ target_include_directories(soundsys PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
 target_link_libraries(soundsys PRIVATE soundsys_dr_wav)
+target_link_libraries(soundsys PUBLIC simlink::simlink)
 
 if(SOUNDSYS_USE_LIBSAMPLERATE)
     target_link_libraries(soundsys PRIVATE SampleRate::samplerate)

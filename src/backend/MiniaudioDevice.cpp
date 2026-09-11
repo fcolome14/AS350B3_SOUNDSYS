@@ -17,9 +17,11 @@ namespace soundsys {
 #if defined(SOUNDSYS_WITH_MINIAUDIO)
 
 struct MiniaudioDevice::Impl {
-    ma_device    device{};
-    AudioEngine* engine = nullptr;
-    bool         initialised = false;
+    ma_device            device{};
+    AudioEngine*         engine = nullptr;
+    bool                 initialised = false;
+    MiniaudioDevice::Tap tap = nullptr;
+    void*                tapUser = nullptr;
 };
 
 namespace {
@@ -29,11 +31,20 @@ void dataCallback(ma_device* device, void* output, const void* input, ma_uint32 
     auto* impl = static_cast<MiniaudioDevice::Impl*>(device->pUserData);
     if (impl == nullptr || impl->engine == nullptr) return;
     impl->engine->render(static_cast<float*>(output), frameCount, device->playback.channels);
+    if (impl->tap != nullptr) {
+        impl->tap(static_cast<const float*>(output), frameCount, device->playback.channels,
+                  impl->tapUser);
+    }
 }
 
 }  // namespace
 
 bool MiniaudioDevice::available() noexcept { return true; }
+
+void MiniaudioDevice::setTap(Tap tap, void* user) noexcept {
+    impl_->tap = tap;
+    impl_->tapUser = user;
+}
 
 MiniaudioDevice::MiniaudioDevice() : impl_(new Impl()) {}
 
@@ -97,6 +108,8 @@ void MiniaudioDevice::stop() {
 struct MiniaudioDevice::Impl {};
 
 bool MiniaudioDevice::available() noexcept { return false; }
+
+void MiniaudioDevice::setTap(Tap, void*) noexcept {}
 
 MiniaudioDevice::MiniaudioDevice() = default;
 

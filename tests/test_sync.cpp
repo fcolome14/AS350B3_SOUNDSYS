@@ -19,6 +19,7 @@
 #include "TestSupport.hpp"
 #include "soundsys/AudioBuffer.hpp"
 #include "soundsys/AudioEngine.hpp"
+#include "soundsys/TimeStretchReader.hpp"
 #include "soundsys/voices/TurbineStartVoice.hpp"
 
 namespace {
@@ -74,15 +75,18 @@ bool writeSyntheticRecording(const std::string& path) {
     return soundsys::writeWavFloat32(path, samples.data(), frames, 1, kSampleRate, nullptr);
 }
 
-bool writeAnchors(const std::string& path, const std::string& assetPath) {
+// `count` anchors from the start of the profile; fewer than all of them leaves
+// recording past the end of the table, like a real start that runs on into idle.
+bool writeAnchors(const std::string& path, const std::string& assetPath,
+                  int count = kProfileCount) {
     FILE* f = std::fopen(path.c_str(), "w");
     if (!f) return false;
     std::fprintf(f, "{\n  \"schema\": \"soundsys.anchors/1\",\n");
     std::fprintf(f, "  \"engine\": \"synthetic\",\n");
     std::fprintf(f, "  \"asset\": \"%s\",\n  \"anchors\": [\n", assetPath.c_str());
-    for (int i = 0; i < kProfileCount; ++i) {
+    for (int i = 0; i < count; ++i) {
         std::fprintf(f, "    {\"ng\": %.3f, \"t\": %.3f, \"label\": \"%s\"}%s\n", kProfile[i].ng,
-                     kProfile[i].t, kProfile[i].label, (i + 1 < kProfileCount) ? "," : "");
+                     kProfile[i].t, kProfile[i].label, (i + 1 < count) ? "," : "");
     }
     std::fprintf(f, "  ]\n}\n");
     std::fclose(f);
@@ -107,6 +111,9 @@ struct RenderResult {
     std::uint32_t      channels = 2;
     double             finalSyncError = 0.0;
     double             maxSyncError = 0.0;
+    double             finalPosition = 0.0;
+    double             finalSpeed = 0.0;
+    bool               finalActive = true;
 };
 
 // Runs a full start through the engine with NG(t) = reference profile replayed
@@ -159,6 +166,9 @@ RenderResult renderStart(const std::string& wav, const std::string& anchorsPath,
         }
     }
     result.finalSyncError = start->syncErrorSeconds();
+    result.finalPosition = start->positionSeconds();
+    result.finalSpeed = start->playbackSpeed();
+    result.finalActive = start->isActive();
     return result;
 }
 
@@ -247,7 +257,59 @@ int main() {
         CHECK_NEAR(measured, kHzPerNg * heldNg, kHzPerNg * heldNg * 0.05);
     }
 
+    // --- past the last anchor: the recorded idle plays on at its own rate ------
+    // Table ends at 24 s (NG 58) but the recording runs to 30 s. Once NG sits at
+    // the end of the table, the head must keep moving at 1x through the recorded
+    // idle rather than park on the last anchor and loop a grain.
+    const std::string shortAnchors = "test_sync_anchors_short.json";
+    CHECK(writeAnchors(shortAnchors, wav, kProfileCount - 1));
+    const RenderResult pastTable =
+        renderStart(wav, shortAnchors, 1.0, PlaybackMode::PitchLocked, 24.0, -2.0);
+    CHECK_NEAR(pastTable.finalSpeed, 1.0, 1e-6);
+    CHECK(pastTable.finalPosition > 25.5);  // kept moving through the recorded idle...
+    CHECK(!pastTable.finalActive);          // ...while crossfading out to the loop bank
+
+    // --- noise at zero speed must not turn into a buzz ------------------------
+    // The failure this guards against: the same grain re-read every hop makes
+    // the output periodic at the hop, i.e. strongly self-similar at that lag.
+    {
+        std::vector<float> noise(static_cast<std::size_t>(2.0 * kSampleRate));
+        std::uint32_t      state = 12345u;
+        for (float& s : noise) {
+            state = state * 1664525u + 1013904223u;
+            s = static_cast<float>(static_cast<double>(state) / 4294967296.0 - 0.5);
+        }
+        soundsys::AudioBuffer buffer;
+        buffer.assign({noise}, kSampleRate);
+
+        soundsys::TimeStretchReader head;
+        head.prepare(&buffer, kSampleRate);
+        head.reset(1.0);
+        head.setSpeed(0.0);
+
+        const std::uint32_t total = static_cast<std::uint32_t>(kSampleRate);
+        std::vector<float>  out(total);
+        for (std::uint32_t done = 0; done < total; done += 256) {
+            float* ch[1] = {out.data() + done};
+            head.read(ch, 1, std::min<std::uint32_t>(256, total - done));
+        }
+
+        const std::uint32_t lag = static_cast<std::uint32_t>(0.020 * kSampleRate);  // default hop
+        double dot = 0.0, e0 = 0.0, e1 = 0.0;
+        for (std::uint32_t i = 0; i + lag < total; ++i) {
+            dot += static_cast<double>(out[i]) * out[i + lag];
+            e0 += static_cast<double>(out[i]) * out[i];
+            e1 += static_cast<double>(out[i + lag]) * out[i + lag];
+        }
+        const double selfSimilarity = dot / std::sqrt(e0 * e1 + 1e-12);
+        std::printf("%-26s self-similarity at the hop lag %.3f\n", "noise at zero speed",
+                    selfSimilarity);
+        CHECK(selfSimilarity < 0.3);
+        CHECK(std::sqrt(e0 / total) > 0.1);  // and it did not just go quiet
+    }
+
     std::remove(wav.c_str());
     std::remove(anchorsPath.c_str());
+    std::remove(shortAnchors.c_str());
     return test::summary("sync");
 }

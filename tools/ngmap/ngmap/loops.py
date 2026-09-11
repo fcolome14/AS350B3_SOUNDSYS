@@ -39,10 +39,19 @@ def find_loop(rec: Recording, *, region_start: float, region_end: float,
     if b - a < int((target_seconds + 2 * search_seconds) * rate):
         raise ValueError("region is too short for the requested loop length")
 
+    # Match on the pre-emphasised signal (x[n] - 0.95 x[n-1]). On raw samples
+    # the rumble carries most of the energy and wins the correlation, leaving
+    # the 1-8 kHz whine - the part the ear tracks - to land at a random phase
+    # and blip once per loop.
+    x = np.asarray(rec.samples, dtype=np.float64)
+    emph = np.empty_like(x)
+    emph[0] = x[0]
+    emph[1:] = x[1:] - 0.95 * x[:-1]
+
     match = int(match_ms * 0.001 * rate)
     # Leave room for the match window before the loop start.
     start = a + match
-    reference = rec.samples[start - match:start]
+    reference = emph[start - match:start]
     ref_norm = float(np.linalg.norm(reference)) + 1e-9
 
     nominal_end = start + int(target_seconds * rate)
@@ -56,7 +65,7 @@ def find_loop(rec: Recording, *, region_start: float, region_end: float,
     # Step by one sample: at 48 kHz a whole-sample search is already finer than
     # the period of anything audible up here, and the region is small.
     for end in range(lo, hi):
-        candidate = rec.samples[end - match:end]
+        candidate = emph[end - match:end]
         denom = (float(np.linalg.norm(candidate)) + 1e-9) * ref_norm
         score = float(np.dot(candidate, reference)) / denom
         if score > best_score:

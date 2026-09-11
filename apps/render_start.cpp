@@ -32,6 +32,9 @@ struct Options {
     std::string csv;
     double      speed = 1.0;
     std::string mode = "pitch-locked";
+    double      grainMs = 0.0;   // 0 = library default
+    double      searchMs = 0.0;
+    double      jitterMs = -1.0;
     double      sampleRate = 48000.0;
     double      tailSeconds = 2.0;
     std::uint32_t blockFrames = 256;
@@ -69,6 +72,9 @@ bool parse(int argc, char** argv, Options& o) {
         else if (arg == "--csv") o.csv = next("--csv");
         else if (arg == "--speed") o.speed = std::stod(next("--speed"));
         else if (arg == "--mode") o.mode = next("--mode");
+        else if (arg == "--grain-ms") o.grainMs = std::stod(next("--grain-ms"));
+        else if (arg == "--search-ms") o.searchMs = std::stod(next("--search-ms"));
+        else if (arg == "--jitter-ms") o.jitterMs = std::stod(next("--jitter-ms"));
         else if (arg == "--rate") o.sampleRate = std::stod(next("--rate"));
         else if (arg == "--tail") o.tailSeconds = std::stod(next("--tail"));
         else if (arg == "--block") o.blockFrames = static_cast<std::uint32_t>(std::stoul(next("--block")));
@@ -102,6 +108,10 @@ int main(int argc, char** argv) {
                      opt.mode.c_str());
         return 1;
     }
+
+    if (opt.grainMs > 0.0) startCfg.stretch.grainMs = opt.grainMs;
+    if (opt.searchMs > 0.0) startCfg.stretch.searchMs = opt.searchMs;
+    if (opt.jitterMs >= 0.0) startCfg.stretch.jitterMs = opt.jitterMs;
 
     auto startVoice = std::make_unique<soundsys::TurbineStartVoice>(startCfg);
     std::string error;

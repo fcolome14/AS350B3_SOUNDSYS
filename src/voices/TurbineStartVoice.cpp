@@ -8,7 +8,7 @@ namespace soundsys {
 
 TurbineStartVoice::TurbineStartVoice(TurbineStartConfig cfg) : cfg_(std::move(cfg)) {
     gain_ = cfg_.gain;
-    head_ = makePlaybackHead(cfg_.mode);
+    head_ = makePlaybackHead(cfg_.mode, cfg_.stretch);
 }
 
 bool TurbineStartVoice::load(std::string* error) {
@@ -34,9 +34,24 @@ void TurbineStartVoice::prepare(const AudioFormat& fmt) {
     if (!loaded_) return;
     head_->prepare(&buffer_, fmt.sampleRate);
     head_->setLooping(false);
-    fadeStep_ = (cfg_.fadeOutSeconds > 0.0)
-                    ? static_cast<float>(1.0 / (cfg_.fadeOutSeconds * fmt.sampleRate))
-                    : 1.0f;
+    fadeOutStep_ = (cfg_.fadeOutSeconds > 0.0)
+                       ? static_cast<float>(1.0 / (cfg_.fadeOutSeconds * fmt.sampleRate))
+                       : 1.0f;
+    handoffStep_ = (cfg_.handoffCrossfadeSeconds > 0.0)
+                       ? static_cast<float>(1.0 / (cfg_.handoffCrossfadeSeconds * fmt.sampleRate))
+                       : 1.0f;
+    fadeStep_ = fadeOutStep_;
+}
+
+void TurbineStartVoice::announceHandoff(float ng) {
+    if (handoffEmitted_) return;
+    handoffEmitted_ = true;
+    if (sink_) {
+        SoundEvent done;
+        done.type = EventType::StartSequenceComplete;
+        done.value = ng;
+        sink_->emit(done);
+    }
 }
 
 void TurbineStartVoice::beginStart(double ng) {
@@ -50,7 +65,9 @@ void TurbineStartVoice::beginStart(double ng) {
     maxNgSeen_ = ng;
     haveLastTarget_ = false;
     handoffEmitted_ = false;
+    freeRunning_ = false;
     fadeGain_ = 1.0f;
+    fadeStep_ = fadeOutStep_;
     state_ = State::Running;
 }
 
@@ -106,11 +123,33 @@ void TurbineStartVoice::onParameters(const ParameterSnapshot& p) {
     }
     lastTargetPos_ = targetPos_;
 
-    // Feedback: nudge the head towards where NG says it should be. Small gain,
-    // so it corrects drift over seconds instead of bending the pitch audibly.
-    const double error = targetPos_ - head_->positionSeconds();
-    const double speed = smoothedFeedForward_ + cfg_.positionGain * error;
-    head_->setSpeed(std::clamp(speed, cfg_.minSpeed, cfg_.maxSpeed));
+    // Past the last anchor the recording is the engine sitting at idle, and at a
+    // steady NG the right way to play it is forward at the recorded rate: the
+    // tone is already correct and there is nothing to stretch. Holding the head
+    // on the last anchor instead would loop one grain's worth of tape for as
+    // long as the engine idles.
+    if (!freeRunning_ && targetPos_ >= anchors_.lastTime() &&
+        head_->positionSeconds() >= anchors_.lastTime() - cfg_.handoffMarginSeconds) {
+        freeRunning_ = true;
+        // The start is over. The steady-state voices take it from here, and
+        // this one crossfades out on its own recorded idle.
+        if (state_ == State::Running) {
+            announceHandoff(p.ng);
+            fadeStep_ = handoffStep_;
+            state_ = State::FadingOut;
+        }
+    }
+
+    if (freeRunning_) {
+        head_->setSpeed(1.0);
+        targetPos_ = head_->positionSeconds();  // keeps the sync diagnostics meaningful
+    } else {
+        // Feedback: nudge the head towards where NG says it should be. Small
+        // gain, so it corrects drift over seconds instead of bending the pitch.
+        const double error = targetPos_ - head_->positionSeconds();
+        const double speed = smoothedFeedForward_ + cfg_.positionGain * error;
+        head_->setSpeed(std::clamp(speed, cfg_.minSpeed, cfg_.maxSpeed));
+    }
 
     // Hand over to the idle loop once the recording is spent. The event goes
     // through the engine, so this voice never learns who takes the baton.
@@ -118,13 +157,9 @@ void TurbineStartVoice::onParameters(const ParameterSnapshot& p) {
                           head_->positionSeconds() >=
                               buffer_.durationSeconds() - cfg_.handoffMarginSeconds;
     if (finished && !handoffEmitted_) {
-        handoffEmitted_ = true;
-        if (sink_) {
-            SoundEvent done;
-            done.type = EventType::StartSequenceComplete;
-            done.value = p.ng;
-            sink_->emit(done);
-        }
+        // A table that runs to the very end of the file never free-runs: hand
+        // over when the recording is spent.
+        announceHandoff(p.ng);
         if (state_ == State::Running) state_ = State::FadingOut;
     }
 }

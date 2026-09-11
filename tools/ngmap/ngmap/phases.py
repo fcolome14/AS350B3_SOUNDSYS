@@ -13,7 +13,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from .anchors import Calibration
-from .audio import PitchTrack, Recording, load_wav, save_wav
+from .audio import PitchTrack, Recording, save_wav
 
 
 @dataclass
