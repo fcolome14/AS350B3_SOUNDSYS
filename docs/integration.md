@@ -66,8 +66,25 @@ Build both (each with its own CMake; the VEMD finds `../AS350B3_SOUNDSYS/simlink
 by itself). Then, sound first:
 
 ```bash
-build/bin/Release/soundsys_host.exe --wav work/2b1_bridge/2b1_start_bridged_eq.wav --anchors work/2b1_bridge/2b1_start_bridged_eq.vemd.anchors.json
+build/bin/Release/soundsys_host.exe --phase start=work/phases/start.wav,work/phases/idle_loop.wav --phase idle=,work/phases/idle_loop.wav --phase flight=work/phases/flight_engage.wav,work/phases/flight_loop.wav --phase takeoff=work/phases/takeoff.wav,work/phases/cruise_loop.wav --phase shutdown=work/phases/shutdown.wav
 ```
+
+(Or from VS Code: `.vscode/launch.json` has it ready.) Each `--phase` gives the
+recording of that phase: `<phase>=<one-shot>[,<loop>]`. The one-shot plays on
+entering the phase and the loop holds it for as long as the aircraft stays
+there, so idle lasts as long as the pilot wants and the twist grip to FLIGHT
+plays its own recording. Nothing is stretched or pitched, so there is no
+processing artefact to hear; the cost is that inside a phase the sound no
+longer follows NG.
+
+The phase comes from the VEMD's own state: `Starting` -> start, `GroundIdle` ->
+idle, twist grip FLIGHT -> flight, collective past `takeoffCollective` ->
+takeoff, engine off after running -> shutdown. Losing the link is not a
+shutdown: the sound simply stops.
+
+The older NG-driven path is still there, for when the sound has to track the
+gauge rather than the phase (`--wav`/`--anchors`/`--loop`, see
+[sync.md](sync.md)); the two are mutually exclusive.
 
 and the VEMD, as usual (press `S` for START, `R` to stop, `G` twist grip):
 
@@ -81,9 +98,8 @@ Without the panel window - same model, same publisher, START after 1 s:
 ../AS350B3_VEMD/build/Release/vemd_headless.exe --seconds 60
 ```
 
-Useful host options: `--idle-loop idle.wav` (hand over at the end of the
-start), `--record session.wav` (keep what was played), `--gain 0.5`,
-`--delay-ms 60`, `--bind 127.0.0.1`. By default the host listens on every
+Useful host options: `--record session.wav` (keep what was played),
+`--gain 0.5`, `--delay-ms 60`, `--bind 127.0.0.1`. By default the host listens on every
 interface so a VEMD on another machine can reach it; the first time, Windows
 may ask whether to allow `soundsys_host` through the firewall.
 
@@ -95,13 +111,22 @@ SIMLINK_TARGET=192.168.1.20:49350 ./vemd_starter
 
 ## Measured end to end
 
-`vemd_headless` (seed 12345, OAT 9.5 C) driving `soundsys_host` with the
-bridged 2B1 start over loopback: START heard 2.4 s into the session, idle
-heard at 43.1 s (NG 67.9 %), link loss detected and the engine shut down when
-the VEMD exited. Against the NG the VEMD model produced, the recorded main NG
-line sat at **x1.0008 median** of its expected frequency (p10 0.970, p90
-1.011, 38 samples from 12 % NG to idle) - the sound follows the gauges, not a
-clock.
+`vemd_headless` (seed 12345, OAT 9.5 C: START at 3 s, twist grip to FLIGHT at
+60 s, 88 s in all) driving `soundsys_host` with the bridged 2B1 start and the
+idle/flight loop bank, over loopback. The host heard START at 2.4 s, idle at
+43.1 s (NG 67.9 %), and shut the engine down when the VEMD exited. The recorded
+main NG line against the frequency the VEMD's NG predicts (6497 Hz x NG / 68):
+
+| Phase | Samples | Median | p10 - p90 |
+|---|---|---|---|
+| Start (NG 12 % to idle) | 32 | 0.998 | 0.965 - 1.007 |
+| Idle held | 18 | 1.000 | 0.999 - 1.002 |
+| Twist grip to FLIGHT (incl. the overshoot) | 12 | 1.000 | 0.998 - 1.001 |
+| Flight held | 16 | 1.000 | 0.999 - 1.001 |
+
+No gap anywhere while the engine ran: level never below -36 dBFS from START
+to link loss (median -23.8 dBFS at gain 0.3), flat through the start-to-loops
+handover and the twist grip. The sound follows the gauges, not a clock.
 
 ## Extending the contract
 

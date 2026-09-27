@@ -21,6 +21,7 @@ struct ParameterSnapshot {
     float collective = 0.0f;
     float airspeed = 0.0f;
     float masterGain = 1.0f;
+    float phase = 0.0f;  // EnginePhase
 
     // Seconds of wall time covered by the block this snapshot belongs to.
     // Voices integrate rates with it instead of keeping their own clock.
@@ -53,6 +54,7 @@ public:
         s.collective = get(ParamId::CollectivePercent);
         s.airspeed = get(ParamId::AirspeedKt);
         s.masterGain = get(ParamId::MasterGain);
+        s.phase = get(ParamId::EnginePhase);
         s.blockSeconds = blockSeconds;
         return s;
     }

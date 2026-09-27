@@ -45,6 +45,7 @@ void TimeStretchReader::prepare(const AudioBuffer* source, double outputSampleRa
     if (channels_ > 0) {
         ready_.assign(static_cast<std::size_t>(channels_) * hopFrames_, 0.0f);
         tail_.assign(static_cast<std::size_t>(channels_) * hopFrames_, 0.0f);
+        head_.assign(static_cast<std::size_t>(channels_) * hopFrames_, 0.0f);
     }
     reference_.assign(correlationFrames_, 0.0f);
 
@@ -172,18 +173,54 @@ void TimeStretchReader::buildNextGrain() {
     const double slow = 1.0 - std::min(1.0, speed_);
     const double start = findBestOffset(position_ + jitterFrames_ * slow * scatter());
 
-    // First half overlap-adds onto the previous grain's tail; second half is
-    // kept for the next one.
     for (std::uint32_t c = 0; c < channels_; ++c) {
-        float* readyCh = ready_.data() + static_cast<std::size_t>(c) * hopFrames_;
-        float* tailCh = tail_.data() + static_cast<std::size_t>(c) * hopFrames_;
+        float* headCh = head_.data() + static_cast<std::size_t>(c) * hopFrames_;
+        for (std::uint32_t i = 0; i < hopFrames_; ++i) headCh[i] = sampleAt(c, start + i * step);
+    }
+
+    // How alike are the two signals about to be crossfaded? WSOLA lines up the
+    // tonal part, but the broadband part of a real recording (air, combustion,
+    // rotor wash) read from two different places is unrelated noise. A plain
+    // Hann crossfade keeps amplitude for the first and loses 3 dB of power in
+    // the middle of every overlap for the second - a dip once per hop, heard as
+    // a buzz at the hop rate whatever the grain size (measured +19-21 dB of
+    // modulation at 20-50 Hz on the real start). So the fade is scaled from
+    // the measured correlation r to keep POWER constant:
+    //     g_new = k s,  g_old = k (1 - s),  k = 1 / sqrt((1-s)^2 + s^2 + 2 r s (1-s))
+    // r = 1 gives the plain Hann fade, r = 0 an equal-power one.
+    double r = 1.0;
+    if (primed_) {
+        double dot = 0.0, eOld = 0.0, eNew = 0.0;
         for (std::uint32_t i = 0; i < hopFrames_; ++i) {
-            const float head = sampleAt(c, start + i * step) * window_[i];
-            readyCh[i] = tailCh[i] + head;
+            double a = 0.0, b = 0.0;
+            for (std::uint32_t c = 0; c < channels_; ++c) {
+                a += tail_[static_cast<std::size_t>(c) * hopFrames_ + i];
+                b += head_[static_cast<std::size_t>(c) * hopFrames_ + i];
+            }
+            dot += a * b;
+            eOld += a * a;
+            eNew += b * b;
         }
+        r = std::clamp(dot / std::sqrt(eOld * eNew + 1e-12), 0.0, 1.0);
+    }
+
+    for (std::uint32_t c = 0; c < channels_; ++c) {
+        float*       readyCh = ready_.data() + static_cast<std::size_t>(c) * hopFrames_;
+        float*       tailCh = tail_.data() + static_cast<std::size_t>(c) * hopFrames_;
+        const float* headCh = head_.data() + static_cast<std::size_t>(c) * hopFrames_;
         for (std::uint32_t i = 0; i < hopFrames_; ++i) {
-            const std::uint32_t j = hopFrames_ + i;
-            tailCh[i] = sampleAt(c, start + j * step) * window_[j];
+            const double s = window_[i];  // rising half of the Hann window
+            const double f = 1.0 - s;
+            if (primed_) {
+                const double k = 1.0 / std::sqrt(f * f + s * s + 2.0 * r * s * f);
+                readyCh[i] = static_cast<float>(k * (f * tailCh[i] + s * headCh[i]));
+            } else {
+                readyCh[i] = static_cast<float>(s * headCh[i]);  // first grain: fade in from silence
+            }
+        }
+        // The second half stays raw; it is faded when the next grain arrives.
+        for (std::uint32_t i = 0; i < hopFrames_; ++i) {
+            tailCh[i] = sampleAt(c, start + (hopFrames_ + i) * step);
         }
     }
 

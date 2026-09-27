@@ -61,6 +61,8 @@ void SimLinkAdapter::onPacket(const simlink::EnginePacket& p, double localNow) {
     if (count_ < kHistory) ++count_;
 
     deriveEvents(p);
+    phase_ = phaseFor(p);
+    stats_.phase = phase_;
 
     last_ = p;
     haveLast_ = true;
@@ -104,6 +106,37 @@ void SimLinkAdapter::deriveEvents(const simlink::EnginePacket& p) {
     if (genNow && !genBefore) sink_.event(EventType::GeneratorOnline, p.ngPercent);
 }
 
+// What the aircraft is doing, from what the VEMD reports. Derived from the
+// state itself, not from the moment it changed, so a listener that joins late
+// or loses a datagram still lands in the right phase.
+EnginePhase SimLinkAdapter::phaseFor(const simlink::EnginePacket& p) const {
+    switch (p.state) {
+        case EngineState::Starting:
+            return EnginePhase::Start;
+
+        case EngineState::GroundIdle: {
+            if (!p.has(wireflags::kTwistGripFlight)) return EnginePhase::Idle;
+            // Collective stands in for a takeoff until the simulator models one.
+            if (phase_ == EnginePhase::Takeoff || phase_ == EnginePhase::Cruise) {
+                return p.collectivePercent < cfg_.takeoffReleaseCollective ? EnginePhase::Flight
+                                                                          : phase_;
+            }
+            return p.collectivePercent >= cfg_.takeoffCollective ? EnginePhase::Takeoff
+                                                                 : EnginePhase::Flight;
+        }
+
+        case EngineState::Off:
+        default:
+            // Off after something was running is a shutdown to be heard out;
+            // Off from the start is silence.
+            if (phase_ == EnginePhase::Off || phase_ == EnginePhase::Shutdown ||
+                phase_ == EnginePhase::RotorBrake) {
+                return phase_;
+            }
+            return EnginePhase::Shutdown;
+    }
+}
+
 void SimLinkAdapter::update(double localNow) {
     if (stats_.linkUp) {
         stats_.lastPacketAge = localNow - lastPacketLocal_;
@@ -114,6 +147,10 @@ void SimLinkAdapter::update(double localNow) {
                 sink_.event(EventType::EngineShutdown, 0.0f);
             }
             stats_.state = EngineState::Off;
+            // Nobody is flying this any more: stop, do not play a shutdown.
+            phase_ = EnginePhase::Off;
+            stats_.phase = phase_;
+            sink_.parameter(ParamId::EnginePhase, static_cast<float>(phase_));
             resetTimeline();
             return;
         }
@@ -126,6 +163,7 @@ void SimLinkAdapter::update(double localNow) {
     sink_.parameter(ParamId::T4Celsius, s.t4);
     sink_.parameter(ParamId::TorquePercent, s.torque);
     sink_.parameter(ParamId::CollectivePercent, s.collective);
+    sink_.parameter(ParamId::EnginePhase, static_cast<float>(phase_));
     stats_.ng = s.ng;
 }
 

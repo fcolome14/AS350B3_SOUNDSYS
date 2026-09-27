@@ -1,5 +1,34 @@
 # From raw AS350B3 recordings to runtime assets
 
+> Two routes live here. **One recording per phase** (below) is the default: no
+> processing at all, so nothing can be heard but the aircraft. The **NG-driven**
+> route further down places a start recording against the simulated NG with an
+> anchor table, for when the sound has to track the gauge.
+
+## One recording per phase
+
+```bash
+uv run --with av python tools/cut_phases.py
+```
+
+Reads the cabin video audio listed at the top of that script, together with the
+span of each phase as read off the video, and writes `work/phases/`: a one-shot
+for every phase that goes somewhere (start, twist grip to FLIGHT, takeoff,
+landing, shutdown, rotor brake) and a seamless loop for every phase that holds
+still (ground idle, flight idle, cruise). Loop points are picked by ranking the
+seam against every other moment of the loop, so the wrap is not the most abrupt
+thing in it; everything is left 3 dB below full scale and keeps its recording's
+relative level, so two assets crossfading never reach the limiter.
+
+Add takes by adding rows: several recordings of the same phase can be cut side
+by side and chosen between at run time.
+
+To add a new source, list its file and the spans, and check first that it is
+engine only - no commentary, no music - and that the phase boundaries match
+what the engine is doing.
+
+## The NG-driven route
+
 The pipeline takes real recordings - a cabin start, a stretch of ground idle,
 some cruise, a shutdown - and produces exactly two kinds of artefact:
 

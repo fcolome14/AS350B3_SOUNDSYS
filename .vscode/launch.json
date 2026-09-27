@@ -13,12 +13,13 @@
             "request": "launch",
             "program": "${workspaceFolder}/build/bin/Release/soundsys_host.exe",
             "args": [
-                "--wav", "${workspaceFolder}/work/2b1_bridge/2b1_start_bridged_eq.wav",
-                "--anchors", "${workspaceFolder}/work/2b1_bridge/2b1_start_bridged_eq.vemd.anchors.json",
-                // Bucles de regimen estable, por el NG al que se grabaron: siguen
-                // sonando mientras el NG no cambie y cubren IDLE <-> FLIGHT.
-                "--loop", "68:${workspaceFolder}/work/loops/2b1_idle_loop.wav",
-                "--loop", "80.7:${workspaceFolder}/work/loops/2b1_flight_loop.wav"
+                // Una grabacion por fase: pista al entrar en la fase y bucle
+                // mientras dure. No se estira ni se cambia el tono de nada.
+                "--phase", "start=${workspaceFolder}/work/phases/start.wav,${workspaceFolder}/work/phases/idle_loop.wav",
+                "--phase", "idle=,${workspaceFolder}/work/phases/idle_loop.wav",
+                "--phase", "flight=${workspaceFolder}/work/phases/flight_engage.wav,${workspaceFolder}/work/phases/flight_loop.wav",
+                "--phase", "takeoff=${workspaceFolder}/work/phases/takeoff.wav,${workspaceFolder}/work/phases/cruise_loop.wav",
+                "--phase", "shutdown=${workspaceFolder}/work/phases/shutdown.wav"
                 // Mas opciones: "--gain", "0.5", "--record", "sesion.wav", "--bind", "127.0.0.1"
             ],
             "cwd": "${workspaceFolder}",
@@ -33,10 +34,11 @@
             "request": "launch",
             "program": "${workspaceFolder}/build/bin/Debug/soundsys_host.exe",
             "args": [
-                "--wav", "${workspaceFolder}/work/2b1_bridge/2b1_start_bridged_eq.wav",
-                "--anchors", "${workspaceFolder}/work/2b1_bridge/2b1_start_bridged_eq.vemd.anchors.json",
-                "--loop", "68:${workspaceFolder}/work/loops/2b1_idle_loop.wav",
-                "--loop", "80.7:${workspaceFolder}/work/loops/2b1_flight_loop.wav"
+                "--phase", "start=${workspaceFolder}/work/phases/start.wav,${workspaceFolder}/work/phases/idle_loop.wav",
+                "--phase", "idle=,${workspaceFolder}/work/phases/idle_loop.wav",
+                "--phase", "flight=${workspaceFolder}/work/phases/flight_engage.wav,${workspaceFolder}/work/phases/flight_loop.wav",
+                "--phase", "takeoff=${workspaceFolder}/work/phases/takeoff.wav,${workspaceFolder}/work/phases/cruise_loop.wav",
+                "--phase", "shutdown=${workspaceFolder}/work/phases/shutdown.wav"
             ],
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",

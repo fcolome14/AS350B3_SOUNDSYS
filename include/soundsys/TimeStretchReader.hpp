@@ -15,8 +15,12 @@
 // window to the offset that best continues the previous one, which is what
 // keeps a strongly tonal signal like turbine whine from phasing.
 //
-// Cost: one correlation search per grain (~50 per second), everything else is
-// two multiply-adds per sample. No allocation after prepare().
+// Grains are joined with a correlation-adaptive fade that keeps POWER constant:
+// the tonal part WSOLA aligned fades like a plain Hann, the unrelated broadband
+// part (air, combustion, rotor wash) like an equal-power fade, so no seam dips.
+//
+// Cost: one correlation search per grain (~33 per second at the default size),
+// everything else is a few multiply-adds per sample. No allocation after prepare().
 #pragma once
 
 #include <cstdint>
@@ -27,7 +31,11 @@
 namespace soundsys {
 
 struct TimeStretchConfig {
-    double grainMs = 40.0;      // grain length; hop is half of this
+    // Grain length; hop is half of this. Measured on the real 2B1 start driven by
+    // the VEMD's NG, modulation left at the grain rate over the source: 40 ms
+    // +9.1 dB, 60 ms +6.4 dB, 80 ms +8.4 dB (below ~+9 dB is the metric's own
+    // floor). Longer grains also smear the start's faster sweeps.
+    double grainMs = 60.0;
     double searchMs = 5.0;      // WSOLA search radius
     double correlationMs = 10.0;  // how much of the previous grain to match
     int    correlationStride = 2;  // decimation of the correlation, for speed
@@ -82,7 +90,8 @@ private:
 
     std::vector<float> window_;   // Hann, grainFrames_ long
     std::vector<float> ready_;    // channels_ * hopFrames_, the block being emitted
-    std::vector<float> tail_;     // channels_ * hopFrames_, second half of last grain
+    std::vector<float> tail_;     // channels_ * hopFrames_, raw second half of the last grain
+    std::vector<float> head_;     // channels_ * hopFrames_, raw first half of the new grain
     std::vector<float> reference_;  // correlationFrames_, what the next grain should continue
     std::uint32_t      emitted_ = 0;  // frames already taken out of ready_
     bool               primed_ = false;

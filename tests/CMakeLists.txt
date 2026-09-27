@@ -17,3 +17,8 @@ add_executable(test_loopbank test_loopbank.cpp)
 target_link_libraries(test_loopbank PRIVATE soundsys)
 target_include_directories(test_loopbank PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_test(NAME loop_bank COMMAND test_loopbank)
+
+add_executable(test_phaseplayer test_phaseplayer.cpp)
+target_link_libraries(test_phaseplayer PRIVATE soundsys)
+target_include_directories(test_phaseplayer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME phase_player COMMAND test_phaseplayer)

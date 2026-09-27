@@ -39,8 +39,14 @@ AudioEngine          mixes voices, owns the clock, knows nothing about turbines
  |- Limiter                master bus safety
  |
  +- ISoundVoice       one class per sound; add a voice, change nothing else
-     |- TurbineStartVoice  the real start recording, driven by the anchor table
-     +- LoopVoice          a seamless loop pitched by a parameter (idle, rotor)
+     |- PhasePlayerVoice   one recording per phase of flight, played as recorded
+     |                     (the default: nothing stretched, nothing to hear but
+     |                     the aircraft)
+     |- TurbineStartVoice  the start recording placed against NG by an anchor
+     |                     table, for when the sound must track the gauge
+     |- NgLoopBankVoice    steady engine at any NG: loops recorded at idle,
+     |                     flight..., pitched and crossfaded by NG
+     +- LoopVoice          a single seamless loop pitched by a parameter
 ```
 
 The simulator only ever does two things: `pushEvent(...)` and

@@ -22,6 +22,7 @@
 #include <cstdint>
 
 #include "simlink/EnginePacket.hpp"
+#include "soundsys/EnginePhase.hpp"
 #include "soundsys/Events.hpp"
 
 namespace soundsys {
@@ -55,6 +56,13 @@ struct LinkConfig {
     double playoutDelay = 0.060;
     // Silence from the VEMD longer than this shuts the engine down.
     double linkTimeout = 1.0;
+
+    // Collective at which FLIGHT becomes TAKEOFF, and the lower value it has to
+    // fall back through to count as flight again (so it cannot flutter). The
+    // VEMD does not model a takeoff yet; when the simulator does, it should say
+    // so in the packet and this guess goes away.
+    double takeoffCollective = 30.0;
+    double takeoffReleaseCollective = 22.0;
 };
 
 struct LinkStats {
@@ -68,6 +76,7 @@ struct LinkStats {
     double        clockOffset = 0.0;    // local clock minus sender clock, s
     float         ng = 0.0f;            // NG last handed to the engine
     simlink::EngineState state = simlink::EngineState::Off;
+    EnginePhase   phase = EnginePhase::Off;
 };
 
 class SimLinkAdapter {
@@ -92,8 +101,9 @@ private:
         float  ng, nr, t4, torque, collective;
     };
 
-    void   deriveEvents(const simlink::EnginePacket& p);
-    void   resetTimeline();
+    void        deriveEvents(const simlink::EnginePacket& p);
+    EnginePhase phaseFor(const simlink::EnginePacket& p) const;
+    void        resetTimeline();
     Sample sampleAt(double senderTime) const;
 
     ILinkSink& sink_;
@@ -106,6 +116,7 @@ private:
     std::size_t count_ = 0;
 
     simlink::EnginePacket last_{};
+    EnginePhase phase_ = EnginePhase::Off;
     bool   haveLast_ = false;
     double lastPacketLocal_ = 0.0;
     double clockOffset_ = 0.0;

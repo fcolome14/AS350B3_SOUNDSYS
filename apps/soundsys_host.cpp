@@ -26,7 +26,9 @@
 #include "soundsys/AudioEngine.hpp"
 #include "soundsys/backend/MiniaudioDevice.hpp"
 #include "soundsys/link/SimLinkAdapter.hpp"
+#include "soundsys/EnginePhase.hpp"
 #include "soundsys/voices/NgLoopBankVoice.hpp"
+#include "soundsys/voices/PhasePlayerVoice.hpp"
 #include "soundsys/voices/TurbineStartVoice.hpp"
 
 namespace {
@@ -38,6 +40,8 @@ struct Options {
     std::string   wav;
     std::string   anchors;
     std::vector<soundsys::LoopBankEntry> loops;  // steady-state loops, by recorded NG
+    soundsys::PhasePlayerConfig phases;          // one recording per phase of flight
+    bool                        usePhases = false;
     std::string   bind = "0.0.0.0";
     std::string   mode = "pitch-locked";
     std::string   record;
@@ -52,7 +56,17 @@ struct Options {
 
 void usage() {
     std::printf(
-        "usage: soundsys_host --wav <start.wav> --anchors <start.json>\n"
+        "usage, one recording per phase (recommended):\n"
+        "  soundsys_host --phase start=start.wav,idle_loop.wav --phase idle=,idle_loop.wav\n"
+        "                --phase flight=flight_engage.wav,flight_loop.wav\n"
+        "                --phase takeoff=takeoff.wav,cruise_loop.wav\n"
+        "                --phase shutdown=shutdown.wav [--port ...] [--record ...]\n\n"
+        "  --phase <phase>=<one_shot.wav>[,<loop.wav>]   either part may be left out\n"
+        "  phases: off start idle flight takeoff cruise landing shutdown rotor_brake\n"
+        "  The one-shot plays on entering the phase, then the loop holds it for as\n"
+        "  long as the aircraft stays there. Nothing is stretched or pitched.\n\n"
+        "usage, NG-driven start (the older path):\n"
+        "  soundsys_host --wav <start.wav> --anchors <start.json>\n"
         "                     [--loop <ng>:<loop.wav> ...] [--mode pitch-locked|varispeed]\n"
         "                     [--port <udp port>] [--bind <ipv4>] [--delay-ms <ms>]\n"
         "                     [--timeout <s>] [--gain <0..1>] [--record <out.wav>]\n"
@@ -70,6 +84,23 @@ bool parse(int argc, char** argv, Options& o) {
         const auto next = [&]() -> std::string { return (i + 1 < argc) ? argv[++i] : std::string(); };
         if (arg == "--wav") o.wav = next();
         else if (arg == "--anchors") o.anchors = next();
+        else if (arg == "--phase") {
+            // <phase>=<one_shot>[,<loop>]; either side of the comma may be empty.
+            const std::string v = next();
+            const std::size_t eq = v.find('=');
+            soundsys::EnginePhase phase{};
+            if (eq == std::string::npos || !soundsys::phaseFromName(v.substr(0, eq).c_str(), phase)) {
+                std::fprintf(stderr, "--phase wants <phase>=<one_shot.wav>[,<loop.wav>], got \"%s\"\n",
+                             v.c_str());
+                return false;
+            }
+            const std::string files = v.substr(eq + 1);
+            const std::size_t comma = files.find(',');
+            auto& clips = o.phases.phases[static_cast<std::size_t>(phase)];
+            clips.oneShot = comma == std::string::npos ? files : files.substr(0, comma);
+            clips.loop = comma == std::string::npos ? std::string() : files.substr(comma + 1);
+            o.usePhases = true;
+        }
         else if (arg == "--loop") {
             // <ng>:<file>. Split at the FIRST colon, so "68:C:/x.wav" still works.
             const std::string v = next();
@@ -97,7 +128,7 @@ bool parse(int argc, char** argv, Options& o) {
             return false;
         }
     }
-    if (o.wav.empty() || o.anchors.empty()) {
+    if (!o.usePhases && (o.wav.empty() || o.anchors.empty())) {
         usage();
         return false;
     }
@@ -142,38 +173,55 @@ int main(int argc, char** argv) {
     }
 
     // ---- voices ----------------------------------------------------------
-    soundsys::TurbineStartConfig startCfg;
-    startCfg.wavPath = opt.wav;
-    startCfg.anchorsPath = opt.anchors;
-    if (opt.mode == "varispeed") {
-        startCfg.mode = soundsys::PlaybackMode::Varispeed;
-    } else if (opt.mode != "pitch-locked") {
-        std::fprintf(stderr, "unknown --mode %s\n", opt.mode.c_str());
-        return 1;
-    }
+    soundsys::AudioEngine       engine;
+    soundsys::TurbineStartVoice* start = nullptr;
+    soundsys::NgLoopBankVoice*   bank = nullptr;
+    soundsys::PhasePlayerVoice*  phases = nullptr;
+    std::string                  error;
 
-    auto        startVoice = std::make_unique<soundsys::TurbineStartVoice>(startCfg);
-    std::string error;
-    if (!startVoice->load(&error)) {
-        std::fprintf(stderr, "turbine start voice: %s\n", error.c_str());
-        return 1;
-    }
-
-    soundsys::AudioEngine engine;
-    auto* start = static_cast<soundsys::TurbineStartVoice*>(engine.addVoice(std::move(startVoice)));
-
-    soundsys::NgLoopBankVoice* bank = nullptr;
-    if (!opt.loops.empty()) {
-        soundsys::NgLoopBankConfig bankCfg;
-        bankCfg.loops = opt.loops;
-        auto voice = std::make_unique<soundsys::NgLoopBankVoice>(bankCfg);
+    if (opt.usePhases) {
+        // One recording per phase, played as recorded.
+        auto voice = std::make_unique<soundsys::PhasePlayerVoice>(opt.phases);
         if (!voice->load(&error)) {
-            std::fprintf(stderr, "loop bank: %s\n", error.c_str());
+            std::fprintf(stderr, "phase player: %s\n", error.c_str());
             return 1;
         }
-        bank = static_cast<soundsys::NgLoopBankVoice*>(engine.addVoice(std::move(voice)));
+        phases = static_cast<soundsys::PhasePlayerVoice*>(engine.addVoice(std::move(voice)));
+        if (!opt.wav.empty() || !opt.loops.empty()) {
+            std::fprintf(stderr, "--phase given: ignoring --wav/--anchors/--loop\n");
+        }
     } else {
-        std::fprintf(stderr, "no --loop given: the engine will fall silent after the start\n");
+        // The NG-driven path: the start recording placed by an anchor table,
+        // handing over to loops that follow NG.
+        soundsys::TurbineStartConfig startCfg;
+        startCfg.wavPath = opt.wav;
+        startCfg.anchorsPath = opt.anchors;
+        if (opt.mode == "varispeed") {
+            startCfg.mode = soundsys::PlaybackMode::Varispeed;
+        } else if (opt.mode != "pitch-locked") {
+            std::fprintf(stderr, "unknown --mode %s\n", opt.mode.c_str());
+            return 1;
+        }
+
+        auto startVoice = std::make_unique<soundsys::TurbineStartVoice>(startCfg);
+        if (!startVoice->load(&error)) {
+            std::fprintf(stderr, "turbine start voice: %s\n", error.c_str());
+            return 1;
+        }
+        start = static_cast<soundsys::TurbineStartVoice*>(engine.addVoice(std::move(startVoice)));
+
+        if (!opt.loops.empty()) {
+            soundsys::NgLoopBankConfig bankCfg;
+            bankCfg.loops = opt.loops;
+            auto voice = std::make_unique<soundsys::NgLoopBankVoice>(bankCfg);
+            if (!voice->load(&error)) {
+                std::fprintf(stderr, "loop bank: %s\n", error.c_str());
+                return 1;
+            }
+            bank = static_cast<soundsys::NgLoopBankVoice*>(engine.addVoice(std::move(voice)));
+        } else {
+            std::fprintf(stderr, "no --loop given: the engine will fall silent after the start\n");
+        }
     }
     engine.setParameter(soundsys::ParamId::MasterGain, opt.gain);
 
@@ -202,7 +250,8 @@ int main(int argc, char** argv) {
 
     std::printf("soundsys_host: %s @ %.0f Hz | listening on udp %s:%u | %s\n",
                 device.deviceName().c_str(), device.sampleRate(), opt.bind.c_str(),
-                static_cast<unsigned>(rx.port()), opt.mode.c_str());
+                static_cast<unsigned>(rx.port()),
+                opt.usePhases ? "one recording per phase" : opt.mode.c_str());
     std::printf("waiting for the VEMD (Ctrl+C to stop)\n");
     std::fflush(stdout);
 
@@ -224,6 +273,7 @@ int main(int argc, char** argv) {
     double               nextStatus = 0.0;
     bool                 wasUp = false;
     simlink::EngineState lastState = simlink::EngineState::Off;
+    soundsys::EnginePhase lastPhase = soundsys::EnginePhase::Off;
 
     while (!gStop.load() && (opt.runSeconds <= 0.0 || now() < opt.runSeconds)) {
         // Wake at least every couple of milliseconds even with no traffic: the
@@ -246,12 +296,19 @@ int main(int argc, char** argv) {
             std::printf("\n[%7.2f s] %s NG %.1f %%\n", t, stateName(st.state), st.ng);
             lastState = st.state;
         }
+        if (st.phase != lastPhase) {
+            std::printf("\n[%7.2f s] phase %s\n", t, soundsys::phaseName(st.phase));
+            lastPhase = st.phase;
+        }
         if (!opt.quiet && t >= nextStatus) {
             nextStatus = t + 0.5;
             // Which voice is sounding: the start (head speed / sync) or the
             // loop bank (weight of each loop).
             char voices[96] = "";
-            if (start->isActive()) {
+            if (phases != nullptr) {
+                std::snprintf(voices, sizeof(voices), "%s: %s", soundsys::phaseName(st.phase),
+                              phases->playing());
+            } else if (start != nullptr && start->isActive()) {
                 std::snprintf(voices, sizeof(voices), "start x%4.2f sync %+4.0f ms",
                               start->playbackSpeed(), start->syncErrorSeconds() * 1000.0);
             } else if (bank != nullptr && bank->isActive()) {

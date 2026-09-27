@@ -107,10 +107,53 @@ Two things the synthetic test signal hid and the real 2B1 recording exposed:
   that recorded idle - correct tone, nothing stretched - and hands over to the
   idle loop near the end of the file as before.
 
+## Grain seams on real recordings
+
+Driven live by the VEMD, the first pitch-locked version buzzed whenever the
+head moved at other than 1x - i.e. every time it followed NG. Measured on the
+envelope of the 1-8 kHz band, against the same recording played at 1x:
+**+20.7 dB of modulation at 50 Hz**, the grain rate. Two causes, both fixed:
+
+1. **The alignment search was too coarse.** It tried 33 offsets 15 samples
+   apart; the whine the ear follows has a period of 6-40 samples, so its
+   partials landed half out of phase at every seam. The search is now
+   sample-accurate (coarse pass every 4 samples, then every sample around the
+   winner) and matches on the pre-emphasised signal, so the whine decides the
+   alignment rather than the rumble.
+2. **A Hann crossfade loses power on noise.** It sums aligned signals to unity
+   but two unrelated noise segments dip 3 dB in the middle of every overlap -
+   and the broadband part of a real recording read from two places is exactly
+   that. The fade now measures the correlation `r` between the outgoing and
+   incoming halves and scales itself to keep power constant
+   (`k = 1/sqrt((1-s)^2 + s^2 + 2 r s (1-s))`): a plain Hann for `r = 1`, an
+   equal-power fade for `r = 0`. This was the bigger of the two: with the
+   precise search alone the modulation only fell to +16.5 dB, and changing the
+   grain size just moved it (+19-21 dB at 20, 25 and 33 Hz).
+
+With both, 60 ms grains leave **+6.4 dB** at the grain rate - under the
+metric's own floor (varispeed, which has no grains at all, scores +8.9 dB at
+an arbitrary frequency). The bench is a render of the bridged 2B1 start driven
+by the NG trace of the VEMD model.
+
+## After the start: steady phases
+
+Once NG reaches the last anchor, the start voice announces
+`StartSequenceComplete` and crossfades out over 2 s on its own recorded idle,
+while `NgLoopBankVoice` fades in. The bank holds seamless loops recorded at
+known NGs (ground idle 68.0 %, flight 80.7 % for the 2B1) and, at any NG,
+plays the two that bracket it - each varispeed-pitched by NG / its own NG,
+equal-power crossfaded by distance. That is where varispeed is the right tool:
+around a recorded NG the ratio stays near 1, so the pitch error that ruled it
+out for the start does not arise, and there are no grains. It covers holding
+idle indefinitely, the twist grip to FLIGHT and back, and collective in flight,
+all from the VEMD's NG. NG is smoothed at 6 Hz inside the bank, because a step
+in a varispeed ratio is a step in pitch.
+
 ## Why not a music-grade time stretcher
 
 Because we do not need one. A phase vocoder is built to stretch arbitrary
 polyphonic material by large factors; here the material is one strongly periodic
-machine tone, stretch factors are modest, and WSOLA on 40 ms grains costs one
-short correlation search per grain (about 50 per second) and two multiply-adds
-per sample. No FFT, no middleware.
+machine tone, stretch factors are modest, and WSOLA on 60 ms grains costs one
+short correlation search per grain (about 33 per second) and a few
+multiply-adds per sample. No FFT, no middleware. And it only runs during the
+start: every steady phase is plain looped playback.

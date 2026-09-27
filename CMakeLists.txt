@@ -30,6 +30,7 @@ add_library(soundsys STATIC
     src/voices/TurbineStartVoice.cpp
     src/voices/LoopVoice.cpp
     src/voices/NgLoopBankVoice.cpp
+    src/voices/PhasePlayerVoice.cpp
     src/backend/MiniaudioDevice.cpp
 )
 add_library(soundsys::soundsys ALIAS soundsys)

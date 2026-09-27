@@ -55,6 +55,10 @@ enum class ParamId : std::uint16_t {
     CollectivePercent,
     AirspeedKt,
     MasterGain,      // linear, 0..1+
+    // What the aircraft is doing (soundsys/EnginePhase.hpp), carried as a float
+    // so it travels the same latest-value-wins path as everything else: a voice
+    // that misses the moment it changed still ends up in the right phase.
+    EnginePhase,
     Count
 };
 

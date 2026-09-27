@@ -26,9 +26,13 @@ namespace {
 struct RecordingSink final : soundsys::link::ILinkSink {
     std::vector<std::pair<EventType, float>> events;
     std::vector<float>                       ng;
+    soundsys::EnginePhase                    phase = soundsys::EnginePhase::Off;
     void event(EventType t, float v) override { events.emplace_back(t, v); }
     void parameter(ParamId id, float v) override {
         if (id == ParamId::NgPercent) ng.push_back(v);
+        if (id == ParamId::EnginePhase) {
+            phase = static_cast<soundsys::EnginePhase>(static_cast<int>(v));
+        }
     }
     std::vector<EventType> types() const {
         std::vector<EventType> out;
@@ -254,10 +258,46 @@ void testLoopbackSocket() {
     CHECK(host == "127.0.0.1" && port == 5000);  // failures change nothing
 }
 
+// The phase the aircraft is in, derived from the state the VEMD reports.
+void testPhaseDerivation() {
+    using soundsys::EnginePhase;
+    using simlink::flags::kTwistGripFlight;
+
+    RecordingSink  sink;
+    SimLinkAdapter link(sink, LinkConfig{0.060, 1.0, 30.0, 22.0});
+    std::uint32_t  seq = 0;
+    double         t = 0.0;
+    const auto step = [&](EngineState st, float ng, std::uint8_t f, float collective) {
+        EnginePacket p = packet(seq++, t, st, ng, 1, f);
+        p.collectivePercent = collective;
+        link.onPacket(p, t);
+        link.update(t);
+        t += 0.05;
+        return sink.phase;
+    };
+
+    CHECK(step(EngineState::Off, 0.0f, 0, 0.0f) == EnginePhase::Off);
+    CHECK(step(EngineState::Starting, 20.0f, 0, 0.0f) == EnginePhase::Start);
+    CHECK(step(EngineState::GroundIdle, 68.0f, 0, 0.0f) == EnginePhase::Idle);
+    CHECK(step(EngineState::GroundIdle, 79.0f, kTwistGripFlight, 5.0f) == EnginePhase::Flight);
+    // Collective up: a takeoff, as far as the sound is concerned...
+    CHECK(step(EngineState::GroundIdle, 90.0f, kTwistGripFlight, 35.0f) == EnginePhase::Takeoff);
+    // ...and it does not fall back at the first wobble of the lever.
+    CHECK(step(EngineState::GroundIdle, 88.0f, kTwistGripFlight, 25.0f) == EnginePhase::Takeoff);
+    CHECK(step(EngineState::GroundIdle, 80.0f, kTwistGripFlight, 18.0f) == EnginePhase::Flight);
+    // Engine off after running: the shutdown gets heard out, and stays.
+    CHECK(step(EngineState::Off, 40.0f, 0, 0.0f) == EnginePhase::Shutdown);
+    CHECK(step(EngineState::Off, 0.0f, 0, 0.0f) == EnginePhase::Shutdown);
+    // The VEMD going quiet is not a shutdown: just stop.
+    link.update(t + 2.0);
+    CHECK(sink.phase == EnginePhase::Off);
+}
+
 }  // namespace
 
 int main() {
     testWireFormat();
+    testPhaseDerivation();
     testInterpolationRemovesTheStaircase();
     testEventsFromState();
     testWatchdogAndSenderRestart();
