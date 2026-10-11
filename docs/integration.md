@@ -66,7 +66,7 @@ Build both (each with its own CMake; the VEMD finds `../AS350B3_SOUNDSYS/simlink
 by itself). Then, sound first:
 
 ```bash
-build/bin/Release/soundsys_host.exe --phase start=work/phases/start.wav,work/phases/idle_loop.wav --phase idle=,work/phases/idle_loop.wav --phase flight=work/phases/flight_engage.wav,work/phases/flight_loop.wav --phase takeoff=work/phases/takeoff.wav,work/phases/cruise_loop.wav --phase shutdown=work/phases/shutdown.wav
+build/bin/Release/soundsys_host.exe --avionics work/phases/avionics_start.wav,work/phases/avionics_loop.wav --phase start=work/phases/start_v3_full.wav,work/phases/idle_loop_v3.wav --phase idle=,work/phases/idle_loop_v3.wav --phase flight=work/phases/flight_engage_v2.wav,work/phases/flight_loop_v2.wav --phase takeoff=work/phases/takeoff.wav,work/phases/cruise_loop.wav --phase shutdown=work/phases/shutdown.wav
 ```
 
 (Or from VS Code: `.vscode/launch.json` has it ready.) Each `--phase` gives the
@@ -76,6 +76,27 @@ there, so idle lasts as long as the pilot wants and the twist grip to FLIGHT
 plays its own recording. Nothing is stretched or pitched, so there is no
 processing artefact to hear; the cost is that inside a phase the sound no
 longer follows NG.
+
+## Hearing it without the simulator
+
+`fake_vemd` sends the same packets the VEMD does, through a scripted flight:
+display on, start, ground idle, twist grip to FLIGHT, collective up, back down,
+engine off, then it stops sending so the link drops. Run the host first, then:
+
+```bash
+build/bin/Release/fake_vemd.exe --speed 2 --hold 6
+```
+
+`--speed` compresses the whole script (the start alone is 43 s at x1), `--hold`
+is how long it sits in each phase after the start, and `--port` has to match the
+host. Its NG profile is the one measured off the recording the start asset comes
+from, so what you hear is what the gauges would be doing.
+
+`--avionics <one-shot>[,<loop>]` is the cockpit bed, which is not a phase: it
+belongs to the display being powered, so it starts when the link comes up (with
+the engine still stopped), holds under every phase, and stops when the link is
+lost. It sits about 22 dB under the engine, the distance the recording itself
+has between the fan and the turbine.
 
 The phase comes from the VEMD's own state: `Starting` -> start, `GroundIdle` ->
 idle, twist grip FLIGHT -> flight, collective past `takeoffCollective` ->

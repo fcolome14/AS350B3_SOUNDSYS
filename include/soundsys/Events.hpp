@@ -27,6 +27,10 @@ enum class EventType : std::uint16_t {
     // --- Emitted by voices, consumed by other voices ----------------------
     StartSequenceComplete, // TurbineStartVoice finished -> idle loop takes over
 
+    // --- Cockpit ----------------------------------------------------------
+    VemdOn,               // VEMD powered (MASTER ON): the avionics bed starts
+    VemdOff,              // display dark, or the link lost: the bed stops
+
     // --- Misc airframe ----------------------------------------------------
     RotorBrakeOn,
     RotorBrakeOff,

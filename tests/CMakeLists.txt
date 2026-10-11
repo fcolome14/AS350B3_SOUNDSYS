@@ -22,3 +22,8 @@ add_executable(test_phaseplayer test_phaseplayer.cpp)
 target_link_libraries(test_phaseplayer PRIVATE soundsys)
 target_include_directories(test_phaseplayer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_test(NAME phase_player COMMAND test_phaseplayer)
+
+add_executable(test_avionics test_avionics.cpp)
+target_link_libraries(test_avionics PRIVATE soundsys)
+target_include_directories(test_avionics PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME avionics_bed COMMAND test_avionics)

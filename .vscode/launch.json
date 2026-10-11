@@ -15,9 +15,12 @@
             "args": [
                 // Una grabacion por fase: pista al entrar en la fase y bucle
                 // mientras dure. No se estira ni se cambia el tono de nada.
-                "--phase", "start=${workspaceFolder}/work/phases/start.wav,${workspaceFolder}/work/phases/idle_loop.wav",
-                "--phase", "idle=,${workspaceFolder}/work/phases/idle_loop.wav",
-                "--phase", "flight=${workspaceFolder}/work/phases/flight_engage.wav,${workspaceFolder}/work/phases/flight_loop.wav",
+                // Avionica: suena desde MASTER ON (link UP) hasta que se
+                // apaga la pantalla, por debajo de todas las fases.
+                "--avionics", "${workspaceFolder}/work/phases/avionics_start.wav,${workspaceFolder}/work/phases/avionics_loop.wav",
+                "--phase", "start=${workspaceFolder}/work/phases/start_v3_full.wav,${workspaceFolder}/work/phases/idle_loop_v3.wav",
+                "--phase", "idle=,${workspaceFolder}/work/phases/idle_loop_v3.wav",
+                "--phase", "flight=${workspaceFolder}/work/phases/flight_engage_v2.wav,${workspaceFolder}/work/phases/flight_loop_v2.wav",
                 "--phase", "takeoff=${workspaceFolder}/work/phases/takeoff.wav,${workspaceFolder}/work/phases/cruise_loop.wav",
                 "--phase", "shutdown=${workspaceFolder}/work/phases/shutdown.wav"
                 // Mas opciones: "--gain", "0.5", "--record", "sesion.wav", "--bind", "127.0.0.1"
@@ -34,9 +37,12 @@
             "request": "launch",
             "program": "${workspaceFolder}/build/bin/Debug/soundsys_host.exe",
             "args": [
-                "--phase", "start=${workspaceFolder}/work/phases/start.wav,${workspaceFolder}/work/phases/idle_loop.wav",
-                "--phase", "idle=,${workspaceFolder}/work/phases/idle_loop.wav",
-                "--phase", "flight=${workspaceFolder}/work/phases/flight_engage.wav,${workspaceFolder}/work/phases/flight_loop.wav",
+                // Avionica: suena desde MASTER ON (link UP) hasta que se
+                // apaga la pantalla, por debajo de todas las fases.
+                "--avionics", "${workspaceFolder}/work/phases/avionics_start.wav,${workspaceFolder}/work/phases/avionics_loop.wav",
+                "--phase", "start=${workspaceFolder}/work/phases/start_v3_full.wav,${workspaceFolder}/work/phases/idle_loop_v3.wav",
+                "--phase", "idle=,${workspaceFolder}/work/phases/idle_loop_v3.wav",
+                "--phase", "flight=${workspaceFolder}/work/phases/flight_engage_v2.wav,${workspaceFolder}/work/phases/flight_loop_v2.wav",
                 "--phase", "takeoff=${workspaceFolder}/work/phases/takeoff.wav,${workspaceFolder}/work/phases/cruise_loop.wav",
                 "--phase", "shutdown=${workspaceFolder}/work/phases/shutdown.wav"
             ],

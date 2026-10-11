@@ -24,6 +24,7 @@ import sys
 
 import numpy as np
 
+from clean_events import remove_events
 from ngmap import audio
 from ngmap.loops import find_loop, render_loop
 
@@ -38,6 +39,19 @@ SOURCES = {
     "idle_flight": ("C:/Users/ferra/Downloads/AS350B3e Start, IDLE, FLIGHT MODE.m4a", (219, 328)),
     # youtube.com/watch?v=bWyMVuVv3E4, start at 00:44
     "cruise_land": ("C:/Users/ferra/Downloads/AS350B3e Start, Cruise, Land.m4a", (44, 370)),
+    # The 2026-10 replacements. The cockpit one is the only recording whose start
+    # keeps time with the VEMD (switch to 60 % NG in 37.5 s, to idle in 43 s).
+    "cockpit_start": ("C:/Users/ferra/Music/AS350B3-Complete startup_cockpit.mp3", (2.0, 92.0)),
+    "start_v2": ("C:/Users/ferra/Music/AS350B3_full_start_v2.m4a", (141.0, 151.9)),
+}
+
+# Cockpit noise on top of the engine: knocks on the camera, switches, the pilot
+# moving. Measured once by clean_events.find_events, kept here so a rebuild is
+# repeatable. Everything outside these windows comes through untouched.
+NOISE = {
+    "cockpit_start": [(4.76, 4.91), (5.04, 5.08), (5.71, 5.87), (6.18, 6.30)],
+    "start_v2": [(140.90, 140.95), (142.04, 142.08), (142.97, 143.13), (144.08, 144.12),
+                 (145.10, 145.14), (148.88, 148.93), (151.90, 151.96)],
 }
 
 # The chain the sim flies today comes from one take ("idle_flight"); the other
@@ -46,6 +60,10 @@ ONE_SHOTS = [
     # name,                     source,        from,    to
     ("start.wav",               "idle_flight", 219.0,  264.0),  # switch on -> idle stabilised
     ("start_take2.wav",         "cruise_land",  44.0,   92.0),
+    ("start_v3.wav",            "cockpit_start", 38.95,  76.40),  # switch -> FLI screen (60 % NG)
+    ("start_v3_full.wav",       "cockpit_start", 38.95,  87.59),  # ... and on to a settled idle
+    ("avionics_start.wav",      "cockpit_start",  2.00,   4.00),  # MASTER ON, the fan running up
+    ("flight_engage_v2.wav",    "start_v2",     141.0,  151.0),   # grip to FLIGHT, cleaned
     ("flight_engage.wav",       "idle_flight", 290.0,  303.0),  # twist grip, with its overshoot
     ("flight_engage_take2.wav", "cruise_land", 140.0,  151.5),
     ("takeoff.wav",             "idle_flight", 309.0,  328.0),
@@ -56,6 +74,10 @@ ONE_SHOTS = [
 ]
 LOOPS = [
     # name,                   source,        from,    to,     candidate lengths
+    # The fan holds steady well past 0:06; the extra room buys a better seam.
+    ("avionics_loop.wav",     "cockpit_start",  4.0,   7.1, (1.2, 1.6, 2.0, 2.4)),
+    ("idle_loop_v3.wav",      "cockpit_start", 85.0,  93.8, (1.6, 2.0, 2.4)),
+    ("flight_loop_v2.wav",    "start_v2",     148.0, 151.8, (1.2, 1.5, 1.8)),
     ("idle_loop.wav",         "idle_flight", 266.0,  289.5, (12.0, 16.0, 20.0)),
     ("idle_loop_take2.wav",   "cruise_land",  95.0,  139.0, (18.0, 22.0, 26.0)),
     ("flight_loop.wav",       "idle_flight", 303.2,  309.0, (3.0, 4.0, 4.8)),
@@ -98,6 +120,10 @@ def main() -> int:
 
     src = {k: audio.load_audio(os.path.join(RAW, k + ".wav")) for k in SOURCES}
     rate = next(iter(src.values())).rate
+    for key, spans in NOISE.items():
+        if key in src:
+            src[key].samples = remove_events(src[key].samples.astype(np.float64), float(rate), spans)
+            print(f"{key}: {len(spans)} cockpit noise(s) removed")
     gain = {k: HEADROOM / float(np.max(np.abs(src[k].samples[int(a * rate):int(b * rate)])))
             for k, (_, (a, b)) in SOURCES.items()}
 
@@ -124,13 +150,18 @@ def main() -> int:
         whole = audio.Recording(samples=cut(key, a, b, fade_ms=1.0).astype(np.float32), rate=rate)
         span = b - a
         search = 0.35 if span > 10.0 else 0.15
+        # A short loop cannot afford a long crossfade: 250 ms of a 1 s fan loop is
+        # a quarter of it, and the blur costs more than the seam it hides. Scale
+        # the fade with the loop, and look harder when the region is small.
+        step = 0.7 if span > 10.0 else 0.05
         best = None
-        for start in np.arange(0.2, max(0.3, span - min(lengths) - 2 * search - 0.2), 0.7):
+        for start in np.arange(0.2, max(0.3, span - min(lengths) - 2 * search - 0.2), step):
             for secs in lengths:
                 if span - start < secs + 2 * search + 0.2:
                     continue
+                cross = 250.0 if secs > 4.0 else max(12.0, secs * 10.0)
                 pts = find_loop(whole, region_start=start, region_end=span - 0.1,
-                                target_seconds=secs, search_seconds=search, crossfade_ms=250.0)
+                                target_seconds=secs, search_seconds=search, crossfade_ms=cross)
                 render_loop(whole, pts, tmp)
                 rank = seam_rank(audio.load_audio(tmp).samples.astype(np.float64))
                 if best is None or rank < best[0]:

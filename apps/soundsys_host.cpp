@@ -27,6 +27,7 @@
 #include "soundsys/backend/MiniaudioDevice.hpp"
 #include "soundsys/link/SimLinkAdapter.hpp"
 #include "soundsys/EnginePhase.hpp"
+#include "soundsys/voices/AvionicsBedVoice.hpp"
 #include "soundsys/voices/NgLoopBankVoice.hpp"
 #include "soundsys/voices/PhasePlayerVoice.hpp"
 #include "soundsys/voices/TurbineStartVoice.hpp"
@@ -42,6 +43,8 @@ struct Options {
     std::vector<soundsys::LoopBankEntry> loops;  // steady-state loops, by recorded NG
     soundsys::PhasePlayerConfig phases;          // one recording per phase of flight
     bool                        usePhases = false;
+    soundsys::AvionicsBedConfig avionics;        // the cockpit bed, under every phase
+    bool                        useAvionics = false;
     std::string   bind = "0.0.0.0";
     std::string   mode = "pitch-locked";
     std::string   record;
@@ -62,6 +65,8 @@ void usage() {
         "                --phase takeoff=takeoff.wav,cruise_loop.wav\n"
         "                --phase shutdown=shutdown.wav [--port ...] [--record ...]\n\n"
         "  --phase <phase>=<one_shot.wav>[,<loop.wav>]   either part may be left out\n"
+        "  --avionics <one_shot.wav>[,<loop.wav>]        the cockpit bed: MASTER ON\n"
+        "                                                and the fan, under every phase\n"
         "  phases: off start idle flight takeoff cruise landing shutdown rotor_brake\n"
         "  The one-shot plays on entering the phase, then the loop holds it for as\n"
         "  long as the aircraft stays there. Nothing is stretched or pitched.\n\n"
@@ -101,6 +106,18 @@ bool parse(int argc, char** argv, Options& o) {
             clips.loop = comma == std::string::npos ? std::string() : files.substr(comma + 1);
             o.usePhases = true;
         }
+        else if (arg == "--avionics") {
+            // <one_shot>[,<loop>]: the bed is not a phase, it follows the display.
+            const std::string v = next();
+            if (v.empty()) {
+                std::fprintf(stderr, "--avionics wants <one_shot.wav>[,<loop.wav>]\n");
+                return false;
+            }
+            const std::size_t comma = v.find(',');
+            o.avionics.oneShot = comma == std::string::npos ? v : v.substr(0, comma);
+            o.avionics.loop = comma == std::string::npos ? std::string() : v.substr(comma + 1);
+            o.useAvionics = true;
+        }
         else if (arg == "--loop") {
             // <ng>:<file>. Split at the FIRST colon, so "68:C:/x.wav" still works.
             const std::string v = next();
@@ -128,7 +145,7 @@ bool parse(int argc, char** argv, Options& o) {
             return false;
         }
     }
-    if (!o.usePhases && (o.wav.empty() || o.anchors.empty())) {
+    if (!o.usePhases && !o.useAvionics && (o.wav.empty() || o.anchors.empty())) {
         usage();
         return false;
     }
@@ -177,7 +194,18 @@ int main(int argc, char** argv) {
     soundsys::TurbineStartVoice* start = nullptr;
     soundsys::NgLoopBankVoice*   bank = nullptr;
     soundsys::PhasePlayerVoice*  phases = nullptr;
+    soundsys::AvionicsBedVoice*  avionics = nullptr;
     std::string                  error;
+
+    if (opt.useAvionics) {
+        // Registered first, so the bed sits under everything the engine does.
+        auto voice = std::make_unique<soundsys::AvionicsBedVoice>(opt.avionics);
+        if (!voice->load(&error)) {
+            std::fprintf(stderr, "avionics bed: %s\n", error.c_str());
+            return 1;
+        }
+        avionics = static_cast<soundsys::AvionicsBedVoice*>(engine.addVoice(std::move(voice)));
+    }
 
     if (opt.usePhases) {
         // One recording per phase, played as recorded.
@@ -190,6 +218,8 @@ int main(int argc, char** argv) {
         if (!opt.wav.empty() || !opt.loops.empty()) {
             std::fprintf(stderr, "--phase given: ignoring --wav/--anchors/--loop\n");
         }
+    } else if (opt.useAvionics && opt.wav.empty()) {
+        // Only the bed was asked for: the display is on, the engine is not running.
     } else {
         // The NG-driven path: the start recording placed by an anchor table,
         // handing over to loops that follow NG.
@@ -290,6 +320,10 @@ int main(int argc, char** argv) {
         if (st.linkUp != wasUp) {
             std::printf("\n[%7.2f s] %s\n", t,
                         st.linkUp ? "link UP - VEMD heard" : "link DOWN - engine shut down");
+            // The display is powered exactly while we are hearing the VEMD, so
+            // the cockpit bed follows the link, not the engine.
+            engine.pushEvent(st.linkUp ? soundsys::EventType::VemdOn
+                                       : soundsys::EventType::VemdOff);
             wasUp = st.linkUp;
         }
         if (st.state != lastState) {
@@ -316,8 +350,14 @@ int main(int argc, char** argv) {
                 for (std::size_t i = 0; i < bank->loopCount() && n < 80; ++i) {
                     n += std::snprintf(voices + n, sizeof(voices) - n, " %.2f", bank->weight(i));
                 }
+            } else if (avionics != nullptr && avionics->isActive()) {
+                std::snprintf(voices, sizeof(voices), "avionics bed");
             } else {
                 std::snprintf(voices, sizeof(voices), "silent");
+            }
+            if (avionics != nullptr && avionics->running() && phases != nullptr) {
+                const std::size_t n = std::strlen(voices);
+                std::snprintf(voices + n, sizeof(voices) - n, " + bed");
             }
             std::printf("\r %s NG %5.1f %%  | pkts %llu (stale %llu, bad %llu)  age %4.0f ms  | %-28s",
                         stateName(st.state), st.ng,

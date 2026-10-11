@@ -11,3 +11,8 @@ if(SOUNDSYS_USE_MINIAUDIO)
     add_executable(soundsys_host soundsys_host.cpp)
     target_link_libraries(soundsys_host PRIVATE soundsys)
 endif()
+
+# A VEMD that is not there: scripted packets, so the sound can be heard without
+# the simulator. No audio device, so it builds with or without miniaudio.
+add_executable(fake_vemd fake_vemd.cpp)
+target_link_libraries(fake_vemd PRIVATE simlink::simlink)
