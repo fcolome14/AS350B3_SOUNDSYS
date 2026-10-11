@@ -2,7 +2,8 @@
 //
 // Each phase is stood up by a tone of its own, so what is sounding can be read
 // straight off the output: 400 Hz start, 500 Hz idle loop, 600 Hz flight
-// engage, 700 Hz flight loop, 800 Hz shutdown.
+// engage, 700 Hz flight loop, 800 Hz shutdown, 900 Hz in-flight shutdown and
+// 1000 Hz for the blades left after it.
 
 #include <algorithm>
 #include <cmath>
@@ -82,6 +83,10 @@ int main() {
     CHECK(writeTone(engage, 600.0, 2.0));
     CHECK(writeTone(flightLoop, 700.0, 1.0));
     CHECK(writeTone(shutdown, 800.0, 2.0));
+    const std::string shutdownFlight = "test_phase_shutdown_flight.wav";
+    const std::string bladesLoop = "test_phase_blades.wav";
+    CHECK(writeTone(shutdownFlight, 900.0, 2.0));
+    CHECK(writeTone(bladesLoop, 1000.0, 1.0));
 
     soundsys::PhasePlayerConfig cfg;
     const auto at = [&](EnginePhase p) -> soundsys::PhaseClips& {
@@ -93,6 +98,10 @@ int main() {
     at(EnginePhase::Shutdown) = {shutdown, "", 1.0f};
     cfg.crossfadeSeconds = 0.5;
     cfg.loopJoinSeconds = 0.3;
+
+    // Same aircraft, with and without a recording of the engine lost in flight.
+    const soundsys::PhasePlayerConfig cfgNoFlightStop = cfg;
+    at(EnginePhase::ShutdownFlight) = {shutdownFlight, bladesLoop, 1.0f};
 
     auto        voice = std::make_unique<soundsys::PhasePlayerVoice>(cfg);
     std::string error;
@@ -137,12 +146,37 @@ int main() {
     rig.run(2.0, EnginePhase::Cruise);
     CHECK(rig.rms(rig.t - 0.5) < 1e-4);
 
+    // Engine lost in flight: its own recording, then the blades for as long as
+    // it lasts.
+    rig.run(4.0, EnginePhase::Flight);
+    const double tLost = rig.t;
+    rig.run(12.0, EnginePhase::ShutdownFlight);
+    CHECK_NEAR(rig.freq(tLost + 1.0), 900.0, 12.0);
+    CHECK_NEAR(rig.freq(tLost + 4.0), 1000.0, 12.0);
+    CHECK_NEAR(rig.freq(tLost + 11.0), 1000.0, 12.0);
+
+    // Without that recording, the ordinary shutdown stands in for it.
+    {
+        auto fallback = std::make_unique<soundsys::PhasePlayerVoice>(cfgNoFlightStop);
+        CHECK(fallback->load(&error));
+        Rig other;
+        other.voice =
+            static_cast<soundsys::PhasePlayerVoice*>(other.engine.addVoice(std::move(fallback)));
+        other.engine.prepare(fmt);
+        other.run(4.0, EnginePhase::Flight);
+        const double tOff = other.t;
+        other.run(6.0, EnginePhase::ShutdownFlight);
+        CHECK_NEAR(other.freq(tOff + 1.2), 800.0, 10.0);
+        CHECK(other.rms(tOff + 4.0) < 1e-4);
+    }
+
     std::printf("phase player: start %.0f Hz, idle loop %.0f Hz at 30 s, engage %.0f Hz, "
                 "flight loop %.0f Hz, shutdown %.0f Hz\n",
                 rig.freq(2.0), rig.freq(30.0), rig.freq(tFlight + 1.2), rig.freq(tFlight + 19.0),
                 rig.freq(tStop + 1.2));
 
-    for (const std::string& f : {startClip, idleLoop, engage, flightLoop, shutdown}) {
+    for (const std::string& f :
+         {startClip, idleLoop, engage, flightLoop, shutdown, shutdownFlight, bladesLoop}) {
         std::remove(f.c_str());
     }
     return test::summary("phase_player");

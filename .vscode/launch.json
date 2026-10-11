@@ -22,7 +22,9 @@
                 "--phase", "idle=,${workspaceFolder}/work/phases/idle_loop_v3.wav",
                 "--phase", "flight=${workspaceFolder}/work/phases/flight_engage_v2.wav,${workspaceFolder}/work/phases/flight_loop_v2.wav",
                 "--phase", "takeoff=${workspaceFolder}/work/phases/takeoff.wav,${workspaceFolder}/work/phases/cruise_loop.wav",
-                "--phase", "shutdown=${workspaceFolder}/work/phases/shutdown.wav"
+                "--phase", "shutdown=${workspaceFolder}/work/phases/shutdown.wav",
+                // Parada con el puno en FLIGHT: cae el motor y quedan las palas.
+                "--phase", "shutdown_flight=${workspaceFolder}/work/phases/shutdown_flight.wav,${workspaceFolder}/work/phases/blades_loop.wav"
                 // Mas opciones: "--gain", "0.5", "--record", "sesion.wav", "--bind", "127.0.0.1"
             ],
             "cwd": "${workspaceFolder}",
@@ -44,7 +46,8 @@
                 "--phase", "idle=,${workspaceFolder}/work/phases/idle_loop_v3.wav",
                 "--phase", "flight=${workspaceFolder}/work/phases/flight_engage_v2.wav,${workspaceFolder}/work/phases/flight_loop_v2.wav",
                 "--phase", "takeoff=${workspaceFolder}/work/phases/takeoff.wav,${workspaceFolder}/work/phases/cruise_loop.wav",
-                "--phase", "shutdown=${workspaceFolder}/work/phases/shutdown.wav"
+                "--phase", "shutdown=${workspaceFolder}/work/phases/shutdown.wav",
+                "--phase", "shutdown_flight=${workspaceFolder}/work/phases/shutdown_flight.wav,${workspaceFolder}/work/phases/blades_loop.wav"
             ],
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",

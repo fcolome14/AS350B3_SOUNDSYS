@@ -24,7 +24,7 @@ import sys
 
 import numpy as np
 
-from clean_events import remove_events
+from clean_events import fade_lines, remove_events
 from ngmap import audio
 from ngmap.loops import find_loop, render_loop
 
@@ -43,6 +43,10 @@ SOURCES = {
     # keeps time with the VEMD (switch to 60 % NG in 37.5 s, to idle in 43 s).
     "cockpit_start": ("C:/Users/ferra/Music/AS350B3-Complete startup_cockpit.mp3", (2.0, 92.0)),
     "start_v2": ("C:/Users/ferra/Music/AS350B3_full_start_v2.m4a", (141.0, 151.9)),
+    # Power cut in flight, rotor loaded: NG line 8130 Hz until 2.6 s, down to idle
+    # (6400 Hz) by 4.8 s, then autorotation. The picture cuts at 10.0 s.
+    "shutdown_flying": ("D:/MISC/ENGINEERING PROJECTS/P6-AS350B3+ FLIGHT SIMULATOR/SOUND/"
+                        "REAL FLIGHT STAGES/AS350B3_shutdown_flying.m4a", (2.0, 34.0)),
 }
 
 # Cockpit noise on top of the engine: knocks on the camera, switches, the pilot
@@ -52,6 +56,12 @@ NOISE = {
     "cockpit_start": [(4.76, 4.91), (5.04, 5.08), (5.71, 5.87), (6.18, 6.30)],
     "start_v2": [(140.90, 140.95), (142.04, 142.08), (142.97, 143.13), (144.08, 144.12),
                  (145.10, 145.14), (148.88, 148.93), (151.90, 151.96)],
+}
+
+# An engine the recording leaves idling where the sim has it stopped: its whine
+# (every line above above_hz) fades out between start and full, and stays out.
+ENGINE_FADE = {
+    "shutdown_flying": dict(above_hz=5500.0, start=2.6, full=5.0),
 }
 
 # The chain the sim flies today comes from one take ("idle_flight"); the other
@@ -70,6 +80,7 @@ ONE_SHOTS = [
     ("takeoff_take2.wav",       "cruise_land", 154.0,  162.5),
     ("landing.wav",             "cruise_land", 238.0,  267.0),
     ("shutdown.wav",            "cruise_land", 303.0,  345.0),
+    ("shutdown_flight.wav",     "shutdown_flying", 2.0,   9.9),   # engine lost in flight
     ("rotor_brake.wav",         "cruise_land", 345.0,  370.0),
 ]
 LOOPS = [
@@ -82,6 +93,8 @@ LOOPS = [
     ("idle_loop_take2.wav",   "cruise_land",  95.0,  139.0, (18.0, 22.0, 26.0)),
     ("flight_loop.wav",       "idle_flight", 303.2,  309.0, (3.0, 4.0, 4.8)),
     ("cruise_loop.wav",       "cruise_land", 208.0,  237.0, (12.0, 16.0, 20.0)),
+    # What is left once the engine has gone: the blades, in autorotation.
+    ("blades_loop.wav",       "shutdown_flying", 10.2,  33.5, (10.0, 14.0, 18.0)),
 ]
 
 
@@ -124,6 +137,10 @@ def main() -> int:
         if key in src:
             src[key].samples = remove_events(src[key].samples.astype(np.float64), float(rate), spans)
             print(f"{key}: {len(spans)} cockpit noise(s) removed")
+    for key, fade in ENGINE_FADE.items():
+        if key in src:
+            src[key].samples = fade_lines(src[key].samples.astype(np.float64), float(rate), **fade)
+            print(f"{key}: engine lines faded out from {fade['start']:.1f} s")
     gain = {k: HEADROOM / float(np.max(np.abs(src[k].samples[int(a * rate):int(b * rate)])))
             for k, (_, (a, b)) in SOURCES.items()}
 

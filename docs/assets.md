@@ -14,8 +14,9 @@ uv run --with av python tools/cut_phases.py
 Reads the cabin video audio listed at the top of that script, together with the
 span of each phase as read off the video, and writes `work/phases/`: a one-shot
 for every phase that goes somewhere (start, twist grip to FLIGHT, takeoff,
-landing, shutdown, rotor brake) and a seamless loop for every phase that holds
-still (ground idle, flight idle, cruise). Loop points are picked by ranking the
+landing, shutdown, the engine lost in flight, rotor brake) and a seamless loop
+for every phase that holds still (ground idle, flight idle, cruise, the blades
+in autorotation). Loop points are picked by ranking the
 seam against every other moment of the loop, so the wrap is not the most abrupt
 thing in it; everything is left 3 dB below full scale and keeps its recording's
 relative level, so two assets crossfading never reach the limiter.

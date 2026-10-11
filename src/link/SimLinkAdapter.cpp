@@ -130,10 +130,15 @@ EnginePhase SimLinkAdapter::phaseFor(const simlink::EnginePacket& p) const {
             // Off after something was running is a shutdown to be heard out;
             // Off from the start is silence.
             if (phase_ == EnginePhase::Off || phase_ == EnginePhase::Shutdown ||
-                phase_ == EnginePhase::RotorBrake) {
+                phase_ == EnginePhase::ShutdownFlight || phase_ == EnginePhase::RotorBrake) {
                 return phase_;
             }
-            return EnginePhase::Shutdown;
+            // Stopped from ground idle (or mid-start) it runs down as on the
+            // ramp. Stopped with the grip in FLIGHT the rotor is loaded: the
+            // engine goes in a few seconds and the blades are what is left.
+            return (phase_ == EnginePhase::Start || phase_ == EnginePhase::Idle)
+                       ? EnginePhase::Shutdown
+                       : EnginePhase::ShutdownFlight;
     }
 }
 

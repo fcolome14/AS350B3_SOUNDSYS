@@ -18,6 +18,7 @@ enum class EnginePhase : std::int32_t {
     Cruise,      // steady forward flight
     Landing,     // approach and touchdown
     Shutdown,    // fuel off, running down
+    ShutdownFlight,  // engine lost with the grip in FLIGHT: it dies, the blades go on
     RotorBrake,  // brake applied, the last of the noise
     Count
 };
@@ -33,6 +34,7 @@ inline const char* phaseName(EnginePhase p) {
         case EnginePhase::Cruise:     return "cruise";
         case EnginePhase::Landing:    return "landing";
         case EnginePhase::Shutdown:   return "shutdown";
+        case EnginePhase::ShutdownFlight: return "shutdown_flight";
         case EnginePhase::RotorBrake: return "rotor_brake";
         default:                      return "off";
     }

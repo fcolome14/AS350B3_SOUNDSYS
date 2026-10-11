@@ -66,7 +66,7 @@ Build both (each with its own CMake; the VEMD finds `../AS350B3_SOUNDSYS/simlink
 by itself). Then, sound first:
 
 ```bash
-build/bin/Release/soundsys_host.exe --avionics work/phases/avionics_start.wav,work/phases/avionics_loop.wav --phase start=work/phases/start_v3_full.wav,work/phases/idle_loop_v3.wav --phase idle=,work/phases/idle_loop_v3.wav --phase flight=work/phases/flight_engage_v2.wav,work/phases/flight_loop_v2.wav --phase takeoff=work/phases/takeoff.wav,work/phases/cruise_loop.wav --phase shutdown=work/phases/shutdown.wav
+build/bin/Release/soundsys_host.exe --avionics work/phases/avionics_start.wav,work/phases/avionics_loop.wav --phase start=work/phases/start_v3_full.wav,work/phases/idle_loop_v3.wav --phase idle=,work/phases/idle_loop_v3.wav --phase flight=work/phases/flight_engage_v2.wav,work/phases/flight_loop_v2.wav --phase takeoff=work/phases/takeoff.wav,work/phases/cruise_loop.wav --phase shutdown=work/phases/shutdown.wav --phase shutdown_flight=work/phases/shutdown_flight.wav,work/phases/blades_loop.wav
 ```
 
 (Or from VS Code: `.vscode/launch.json` has it ready.) Each `--phase` gives the
@@ -100,8 +100,11 @@ has between the fan and the turbine.
 
 The phase comes from the VEMD's own state: `Starting` -> start, `GroundIdle` ->
 idle, twist grip FLIGHT -> flight, collective past `takeoffCollective` ->
-takeoff, engine off after running -> shutdown. Losing the link is not a
-shutdown: the sound simply stops.
+takeoff, engine off from the start or ground idle -> shutdown, engine off with
+the twist grip in FLIGHT -> shutdown_flight (the engine dies in a few seconds
+and the blades loop holds until the display goes dark or the next start; with
+no `--phase shutdown_flight` it plays the ordinary shutdown). Losing the link
+is not a shutdown: the sound simply stops.
 
 The older NG-driven path is still there, for when the sound has to track the
 gauge rather than the phase (`--wav`/`--anchors`/`--loop`, see

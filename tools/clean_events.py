@@ -14,6 +14,7 @@ sample-for-sample the input.
 from __future__ import annotations
 
 import numpy as np
+from scipy.ndimage import maximum_filter1d, median_filter, uniform_filter1d
 from scipy.signal import find_peaks, istft, stft
 
 
@@ -70,6 +71,39 @@ def remove_events(samples: np.ndarray, rate: float, spans, *, n_fft: int = 1024)
         n = j1 - j0
         taper = np.minimum(1.0, np.minimum(np.arange(n), n - 1 - np.arange(n)) / 3.0)
         gain[:, j0:j1] = np.minimum(gain[:, j0:j1], 1.0 - (1.0 - wanted) * taper[None, :])
+
+    _, cleaned = istft(spec * gain, rate, nperseg=n_fft, noverlap=n_fft - hop)
+    cleaned = np.pad(cleaned, (0, max(0, len(samples) - len(cleaned))))[:len(samples)]
+    return cleaned.astype(samples.dtype, copy=False)
+
+
+def fade_lines(samples: np.ndarray, rate: float, *, above_hz: float, start: float, full: float,
+               n_fft: int = 4096) -> np.ndarray:
+    """Let the tonal lines above `above_hz` die away between `start` and `full`.
+
+    For an engine that the recording leaves idling where the simulator needs it
+    stopped: the turbine whine is a handful of narrow lines standing well clear
+    of everything around them, so each bin on a line is pulled down to the floor
+    its neighbours in frequency set - a subtraction again, gain never above 1.
+    The pull grows from nothing at `start` to all of it at `full` and stays, so
+    the whine fades as it falls instead of being cut. Bins that are not on a
+    line, and everything below `above_hz`, are left exactly as they were.
+    """
+    hop = n_fft // 8
+    freqs, times, spec = stft(samples, rate, nperseg=n_fft, noverlap=n_fft - hop)
+    mag = np.abs(spec)
+    band = freqs >= above_hz
+
+    # A line persists from frame to frame, noise does not: averaging a few
+    # frames lets a line be told from the floor a few dB above it.
+    steady = uniform_filter1d(mag[band], size=9, axis=1)
+    floor = median_filter(steady, size=(int(400.0 / (freqs[1] - freqs[0])) | 1, 1))
+    on_line = maximum_filter1d(steady > 1.6 * floor, size=5, axis=0)
+    wanted = np.where(on_line, np.minimum(1.0, floor / np.maximum(steady, 1e-12)), 1.0)
+
+    depth = np.clip((times - start) / max(full - start, 1e-9), 0.0, 1.0)
+    gain = np.ones(mag.shape)
+    gain[band] = wanted ** depth[None, :]
 
     _, cleaned = istft(spec * gain, rate, nperseg=n_fft, noverlap=n_fft - hop)
     cleaned = np.pad(cleaned, (0, max(0, len(samples) - len(cleaned))))[:len(samples)]

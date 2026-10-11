@@ -100,6 +100,12 @@ void PhasePlayerVoice::startClip(const Clip& clip, bool looping, bool loopPendin
 
 void PhasePlayerVoice::switchTo(EnginePhase phase) {
     phase_ = phase;
+    // No recording of an engine lost in flight: the ordinary shutdown is still
+    // better than cutting to silence.
+    if (phase == EnginePhase::ShutdownFlight) {
+        const PhaseClips& own = cfg_.phases[static_cast<std::size_t>(phase)];
+        if (own.oneShot.empty() && own.loop.empty()) phase = EnginePhase::Shutdown;
+    }
     const auto index = static_cast<std::size_t>(phase);
     const PhaseClips& clips = cfg_.phases[index];
 

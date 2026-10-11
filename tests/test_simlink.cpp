@@ -285,9 +285,21 @@ void testPhaseDerivation() {
     // ...and it does not fall back at the first wobble of the lever.
     CHECK(step(EngineState::GroundIdle, 88.0f, kTwistGripFlight, 25.0f) == EnginePhase::Takeoff);
     CHECK(step(EngineState::GroundIdle, 80.0f, kTwistGripFlight, 18.0f) == EnginePhase::Flight);
-    // Engine off after running: the shutdown gets heard out, and stays.
+    // Engine off with the grip in FLIGHT: the in-flight stop, heard out, and it stays.
+    CHECK(step(EngineState::Off, 40.0f, 0, 0.0f) == EnginePhase::ShutdownFlight);
+    CHECK(step(EngineState::Off, 0.0f, 0, 0.0f) == EnginePhase::ShutdownFlight);
+    // The same from takeoff power.
+    CHECK(step(EngineState::Starting, 20.0f, 0, 0.0f) == EnginePhase::Start);
+    CHECK(step(EngineState::GroundIdle, 90.0f, kTwistGripFlight, 35.0f) == EnginePhase::Takeoff);
+    CHECK(step(EngineState::Off, 40.0f, 0, 0.0f) == EnginePhase::ShutdownFlight);
+    // Engine off from ground idle, or from a start that never got there: the
+    // ordinary shutdown.
+    CHECK(step(EngineState::Starting, 20.0f, 0, 0.0f) == EnginePhase::Start);
+    CHECK(step(EngineState::GroundIdle, 68.0f, 0, 0.0f) == EnginePhase::Idle);
     CHECK(step(EngineState::Off, 40.0f, 0, 0.0f) == EnginePhase::Shutdown);
     CHECK(step(EngineState::Off, 0.0f, 0, 0.0f) == EnginePhase::Shutdown);
+    CHECK(step(EngineState::Starting, 20.0f, 0, 0.0f) == EnginePhase::Start);
+    CHECK(step(EngineState::Off, 10.0f, 0, 0.0f) == EnginePhase::Shutdown);
     // The VEMD going quiet is not a shutdown: just stop.
     link.update(t + 2.0);
     CHECK(sink.phase == EnginePhase::Off);
